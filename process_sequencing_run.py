@@ -10,7 +10,7 @@ from datetime import datetime as date
 from ConfigParser import SafeConfigParser
 
 
-def parse_config_file()
+def parse_config_file():
 	"""
 	This function finds and parses a configuration file, which contains various constants to run this pipeline
 	"""
@@ -22,7 +22,7 @@ def parse_config_file()
 		parser.readfp(cfg_files[0])
 		return parser.defaults()
 	else:
-		print 'There were %d config (*cfg) files found in %s.  Correct this.' % (len(cfg_files), current_dir)
+		print 'There were %d config (*cfg) files found in %s.  Need exactly 1.  Correct this.' % (len(cfg_files), current_dir)
 		sys.exit(1)
 
 
@@ -92,12 +92,17 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 	This method checks for a samplesheet and does a quick check that it is formatted within guidelines (described elsewhere)
 	"""
 	samplesheet_path = os.path.join(run_dir_path, 'SampleSheet.csv')
+
 	if os.path.isfile(samplesheet_path):
 		# the following regex extracts the sample annotation section, which is started by '[Data]'
 		# and continues until it reaches another section (or the end of the file)
 		# re.findall() returns a list-- get the first element
-		sample_annotation_section = re.findall(r'\[Data\][^\[]*', open(samplesheet_path).read())[0]	
-
+		try:
+			sample_annotation_section = re.findall(r'\[Data\][^\[]*', open(samplesheet_path).read())[0]	
+		except IndexError:
+			print 'Could not find the [Data] section in the SampleSheet.csv file'
+			sys.exit(1)
+ 
 		# this statement gets us a list, where each item in the list is the annotation line in the sample sheet.  
 		# The [2:] index removes the '[Data]' and the line with the field headers 
 		# Also strips off any Windows/Mac endline characters ('\r') if present
@@ -107,13 +112,13 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 		lines_valid = [line_is_valid(line, sample_dir_prefix) for line in annotation_lines]
 		
 		if not all(lines_valid):
-			problem_lines = [i+1 for i,k in lines_valid if k == False]
+			problem_lines = [i+1 for i,k in enumerate(lines_valid) if k == False]
 			print 'There was some problem with the SampleSheet.csv'
 			print 'Problem lines: %s' % problem_lines
 			sys.exit(1)
 
 		# now get a list of all the projects that we are processing in this sampling run:
-		project_id_list = [line.split(',')[6] for line in annotation_line]
+		project_id_list = [line.split(',')[6] for line in annotation_lines]
 		return project_id_list
 	else:
 		print 'Could not locate a SampleSheet.csv file in %s ' % run_dir_path
@@ -160,7 +165,7 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 			read_2_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R2_001.fastq.gz'))) # will be empty list [] if single-end protocol
 
 			# need at least the read 1 files to continue
-`			if len(read_1_fastq_files) == 0:
+			if len(read_1_fastq_files) == 0:
 				print 'Did not find any fastq files in %s directory.' % sample_dir
 				sys.exit(1)			
 
@@ -178,6 +183,7 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 			
 			for call in call_list:
 				try:
+					print 'Issuing system command: %s ' % call
 					subprocess.check_call( call, shell = True )			
 				except subprocess.CalledProcessError:
 					print 'The concatentation of the lane-specific fastq files failed somehow'
