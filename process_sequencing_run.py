@@ -138,7 +138,6 @@ def run_demux(bcl2fastq2_path, run_dir_path, output_dir_path):
 		sys.exit(1)
 
 
-
 def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_prefix):
 	"""
 	This method scans the output and concatenates the fastq files for each sample and read number.
@@ -147,12 +146,13 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 	to do this for both the R1 and R2 reads.
 	"""
 
-	for project in project_id_list:
+	for project_id in project_id_list:
 
-		project_dir = os.path.join(output_directory_path, project)
+		project_dir = os.path.join(output_directory_path, project_id)
 
 		# get the sample-specific subdirectories and append the path to the project directory in front (for full path name):
-		sample_dirs = [os.path.join(project_dir, d) for d in os.listdir(project_dir) if d.startswith(sample_dir_prefix)]
+		sample_dir_names = [d for d in os.listdir(project_dir) if d.startswith(sample_dir_prefix)] # just the names- for 
+		sample_dirs = [os.path.join(project_dir, d) for d in sample_dir_names] #make full paths
 
 		# double check that they are actually directories:
 		sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
@@ -199,6 +199,7 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 def create_final_locations(projects_dir, project_id_list):
 	"""
 	This sets up the empty directory structure where the final merged FASTQ files will be
+	Note that this just sets up the empty project directories and not the sample-specific directories beneath them
 	"""	
 
 	# for organizing projects by date:
@@ -237,43 +238,6 @@ def create_final_locations(projects_dir, project_id_list):
                      	logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
                         sys.exit(1)
 
-
-
-
-def relocate_fastq_files(src_dir, projects_dir, project_id_list):
-	"""
-	This function uses the project_id_list to move the project directories to another location
-	"""
-
-	# for organizing projects by date:
-	today = date.today()
-	year = today.year
-	month = today.month
-
-	# double-check that the config file had a valid path to a directory
-	if os.path.isdir(projects_dir):
-		target_dir = os.path.join(projects_dir, str(year), str(month))
-
-		# try to create the directory-- it may already exist, in which case we catch the exception and move on.
-		# Any other errors encountered in creating the directory will cause pipeline to exit
-		try:
-			os.makedirs(target_dir)
-		except OSError as ex:
-			if ex.errno != 17: # 17 indicates that the directory was already there.
-				logging.error('Exception occured:')
-				logging.error(ex.strerror)
-				sys.exit(1)
-		# check that we do have a destination directory to go to.
-		if os.path.isdir(target_dir):
-			final_locations = []
-			for project_id in project_id_list:
-				logging.info('Moving %s from %s to %s' % (project_id, src_dir, target_dir))
-				shutil.move( os.path.join(src_dir, project_id), target_dir )
-				final_locations.append(os.path.join(target_dir, project_id))
-			return final_locations
-		else:
-			logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
-			sys.exit(1)
 
 
 
