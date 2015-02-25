@@ -147,8 +147,9 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 	"""
 
 	for project in project_id_list:
+
 		project_dir = os.path.join(output_directory_path, project)
-		
+
 		# get the sample-specific subdirectories and append the path to the project directory in front (for full path name):
 		sample_dirs = [os.path.join(project_dir, d) for d in os.listdir(project_dir) if d.startswith(sample_dir_prefix)]
 
@@ -156,7 +157,6 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 		sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
 
 		for sample_dir in sample_dirs:
-
 			# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 			sample_name = os.path.basename(sample_dir).strip(sample_dir_prefix)
 
@@ -178,9 +178,13 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 
 			call_list = []
 			call_list.append(write_call(read_1_fastq_files, merged_read_1_fastq))
-			if len(read_2_fastq) > 0:
-				call_list.append(write_call(read_1_fastq_files, merged_read_1_fastq))
-			
+			if len(read_2_fastq_files) > 0:
+				if len(read_2_fastq_files) == len(read_1_fastq_files):
+					call_list.append(write_call(read_2_fastq_files, merged_read_2_fastq))
+				else:
+					print 'Differing number of FASTQ files between R1 and R2'
+					sys.exit(1)
+
 			for call in call_list:
 				try:
 					print 'Issuing system command: %s ' % call
