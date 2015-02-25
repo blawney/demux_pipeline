@@ -121,8 +121,9 @@ class TestConcatenationCall(unittest.TestCase):
 						subprocess.check_call( call, shell = True )
 	"""
 
-	def my_join(a,b):
-		return os.path.join(a,b)
+
+	def my_join(*args):
+		return reduce(lambda x,y: os.path.join(x,y), args)
 
 	def my_basename(p):
 		return os.path.basename(p)
@@ -134,39 +135,17 @@ class TestConcatenationCall(unittest.TestCase):
 	@mock.patch('process_sequencing_run.os')
 	@mock.patch('process_sequencing_run.glob')
 	def test_makes_correct_cat_call_for_paired_end_protocol(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
-		mock_os.path.isdir.return_value = True			
-		mock_os.listdir.return_value = ['Sample_XX_1', 'Sample_YY_2']
-		mock_glob.glob.side_effect = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L003_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
-						['XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L001_R2_001.fastq.gz', 'XX-1_S1_L002_R2_001.fastq.gz'],
-						['YY-2_S1_L001_R1_001.fastq.gz', 'YY-2_S1_L003_R1_001.fastq.gz', 'YY-2_S1_L002_R1_001.fastq.gz'],
-						['YY-2_S1_L003_R2_001.fastq.gz', 'YY-2_S1_L001_R2_001.fastq.gz', 'YY-2_S1_L002_R2_001.fastq.gz']]
-		concatenate_fastq_files('/path/to/something', ['Project_ABC'], 'Sample_')
-		expected_call_A = 'cat XX-1_S1_L001_R1_001.fastq.gz XX-1_S1_L002_R1_001.fastq.gz XX-1_S1_L003_R1_001.fastq.gz >XX_1_R1_001.fastq.gz'
-		expected_call_B = 'cat XX-1_S1_L001_R2_001.fastq.gz XX-1_S1_L002_R2_001.fastq.gz XX-1_S1_L003_R2_001.fastq.gz >XX_1_R2_001.fastq.gz'
-		expected_call_C = 'cat YY-2_S1_L001_R1_001.fastq.gz YY-2_S1_L002_R1_001.fastq.gz YY-2_S1_L003_R1_001.fastq.gz >YY_2_R1_001.fastq.gz'
-		expected_call_D = 'cat YY-2_S1_L001_R2_001.fastq.gz YY-2_S1_L002_R2_001.fastq.gz YY-2_S1_L003_R2_001.fastq.gz >YY_2_R2_001.fastq.gz'
-		calls = [mock.call(expected_call_A, shell=True),
-			mock.call(expected_call_B, shell=True),
-			mock.call(expected_call_C, shell=True),
-			mock.call(expected_call_D, shell=True)]
-		mock_call.assert_has_calls(calls)
-
-
-	@mock.patch('process_sequencing_run.subprocess.check_call')
-	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
-	@mock.patch('process_sequencing_run.os.path.basename', side_effect = my_basename)
-	@mock.patch('process_sequencing_run.os')
-	@mock.patch('process_sequencing_run.glob')
-	def test_makes_correct_cat_call_for_single_end_protocol(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
-		mock_os.path.isdir.return_value = True			
-		mock_os.listdir.return_value = ['Sample_XX_1', 'Sample_YY_2']
-		mock_glob.glob.side_effect = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L003_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
-						[],
-						['YY-2_S1_L001_R1_001.fastq.gz', 'YY-2_S1_L003_R1_001.fastq.gz', 'YY-2_S1_L002_R1_001.fastq.gz'],
-						[]]
-		concatenate_fastq_files('/path/to/something', ['Project_ABC'], 'Sample_')
-		expected_call_A = 'cat XX-1_S1_L001_R1_001.fastq.gz XX-1_S1_L002_R1_001.fastq.gz XX-1_S1_L003_R1_001.fastq.gz >XX_1_R1_001.fastq.gz'
-		expected_call_B = 'cat YY-2_S1_L001_R1_001.fastq.gz YY-2_S1_L002_R1_001.fastq.gz YY-2_S1_L003_R1_001.fastq.gz >YY_2_R1_001.fastq.gz'
+		mock_os.path.isdir.return_value = True	
+		mock_original_dir = '/path/to/original/Project_ABC/Sample_XX_1/'
+		mock_target_dir = '/path/to/final_projects_dir/2015/2'		
+		mock_os.listdir.return_value = ['Sample_XX_1']
+		mock_glob_return_val = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L003_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
+						['XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L001_R2_001.fastq.gz', 'XX-1_S1_L002_R2_001.fastq.gz']]
+		mock_glob_return_val = [[os.path.join(mock_original_dir, S) for S in R] for R in mock_glob_return_val]
+		mock_glob.glob.side_effect = mock_glob_return_val
+		concatenate_fastq_files('/path/to/something', mock_target_dir, ['Project_ABC'], 'Sample_')
+		expected_call_A = 'cat /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L001_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L002_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L003_R1_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_XX_1/XX_1_R1_001.fastq.gz'
+		expected_call_B = 'cat /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L001_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L002_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L003_R2_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_XX_1/XX_1_R2_001.fastq.gz'
 		calls = [mock.call(expected_call_A, shell=True),
 			mock.call(expected_call_B, shell=True)]
 		mock_call.assert_has_calls(calls)
@@ -177,15 +156,101 @@ class TestConcatenationCall(unittest.TestCase):
 	@mock.patch('process_sequencing_run.os.path.basename', side_effect = my_basename)
 	@mock.patch('process_sequencing_run.os')
 	@mock.patch('process_sequencing_run.glob')
-	def test_issue_error_if_only_read2_files(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
-		mock_os.path.isdir.return_value = True			
+	def test_makes_correct_cat_call_for_multiple_samples(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
+		mock_os.path.isdir.return_value = True	
+		mock_original_dir_1 = '/path/to/original/Project_ABC/Sample_XX_1/'
+		mock_original_dir_2 = '/path/to/original/Project_ABC/Sample_YY_2/'
+		mock_target_dir = '/path/to/final_projects_dir/2015/2'		
 		mock_os.listdir.return_value = ['Sample_XX_1', 'Sample_YY_2']
-		mock_glob.glob.side_effect = [[],
-						['XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L001_R2_001.fastq.gz', 'XX-1_S1_L002_R2_001.fastq.gz'],
-						[],
+		m1 = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L003_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
+						['XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L001_R2_001.fastq.gz', 'XX-1_S1_L002_R2_001.fastq.gz']]
+		m1 = [[os.path.join(mock_original_dir_1, S) for S in R] for R in m1]
+		m2 = [['YY-2_S1_L001_R1_001.fastq.gz', 'YY-2_S1_L003_R1_001.fastq.gz', 'YY-2_S1_L002_R1_001.fastq.gz'],
 						['YY-2_S1_L003_R2_001.fastq.gz', 'YY-2_S1_L001_R2_001.fastq.gz', 'YY-2_S1_L002_R2_001.fastq.gz']]
+		m2 = [[os.path.join(mock_original_dir_2, S) for S in R] for R in m2]
+		mock_glob.glob.side_effect = m1 + m2
+		concatenate_fastq_files('/path/to/something', mock_target_dir, ['Project_ABC'], 'Sample_')
+		expected_call_A = 'cat /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L001_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L002_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L003_R1_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_XX_1/XX_1_R1_001.fastq.gz'
+		expected_call_B = 'cat /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L001_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L002_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L003_R2_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_XX_1/XX_1_R2_001.fastq.gz'
+		expected_call_C = 'cat /path/to/original/Project_ABC/Sample_YY_2/YY-2_S1_L001_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_YY_2/YY-2_S1_L002_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_YY_2/YY-2_S1_L003_R1_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_YY_2/YY_2_R1_001.fastq.gz'
+		expected_call_D = 'cat /path/to/original/Project_ABC/Sample_YY_2/YY-2_S1_L001_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_YY_2/YY-2_S1_L002_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_YY_2/YY-2_S1_L003_R2_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_YY_2/YY_2_R2_001.fastq.gz'
+		calls = [mock.call(expected_call_A, shell=True),
+			mock.call(expected_call_B, shell=True),
+			mock.call(expected_call_C, shell=True),
+			mock.call(expected_call_D, shell=True)]
+		mock_call.assert_has_calls(calls)
+
+
+
+	@mock.patch('process_sequencing_run.subprocess.check_call')
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+	@mock.patch('process_sequencing_run.os.path.basename', side_effect = my_basename)
+	@mock.patch('process_sequencing_run.os')
+	@mock.patch('process_sequencing_run.glob')
+	def test_makes_correct_cat_call_for_multiple_projects(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
+		mock_os.path.isdir.return_value = True	
+		mock_original_dir_1 = '/path/to/original/Project_ABC/Sample_XX_1/'
+		mock_original_dir_2 = '/path/to/original/Project_DEF/Sample_YY_2/'
+		mock_target_dir = '/path/to/final_projects_dir/2015/2'		
+		mock_os.listdir.side_effect = [['Sample_XX_1'], ['Sample_YY_2']]
+		m1 = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L003_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
+						['XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L001_R2_001.fastq.gz', 'XX-1_S1_L002_R2_001.fastq.gz']]
+		m1 = [[os.path.join(mock_original_dir_1, S) for S in R] for R in m1]
+		m2 = [['YY-2_S1_L001_R1_001.fastq.gz', 'YY-2_S1_L003_R1_001.fastq.gz', 'YY-2_S1_L002_R1_001.fastq.gz'],
+						['YY-2_S1_L003_R2_001.fastq.gz', 'YY-2_S1_L001_R2_001.fastq.gz', 'YY-2_S1_L002_R2_001.fastq.gz']]
+		m2 = [[os.path.join(mock_original_dir_2, S) for S in R] for R in m2]
+		mock_glob.glob.side_effect = m1 + m2
+		concatenate_fastq_files('/path/to/something', mock_target_dir, ['Project_ABC', 'Project_DEF'], 'Sample_')
+		expected_call_A = 'cat /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L001_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L002_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L003_R1_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_XX_1/XX_1_R1_001.fastq.gz'
+		expected_call_B = 'cat /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L001_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L002_R2_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L003_R2_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_XX_1/XX_1_R2_001.fastq.gz'
+		expected_call_C = 'cat /path/to/original/Project_DEF/Sample_YY_2/YY-2_S1_L001_R1_001.fastq.gz /path/to/original/Project_DEF/Sample_YY_2/YY-2_S1_L002_R1_001.fastq.gz /path/to/original/Project_DEF/Sample_YY_2/YY-2_S1_L003_R1_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_DEF/Sample_YY_2/YY_2_R1_001.fastq.gz'
+		expected_call_D = 'cat /path/to/original/Project_DEF/Sample_YY_2/YY-2_S1_L001_R2_001.fastq.gz /path/to/original/Project_DEF/Sample_YY_2/YY-2_S1_L002_R2_001.fastq.gz /path/to/original/Project_DEF/Sample_YY_2/YY-2_S1_L003_R2_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_DEF/Sample_YY_2/YY_2_R2_001.fastq.gz'
+		calls = [mock.call(expected_call_A, shell=True),
+			mock.call(expected_call_B, shell=True),
+			mock.call(expected_call_C, shell=True),
+			mock.call(expected_call_D, shell=True)]
+		mock_call.assert_has_calls(calls)
+
+
+
+
+        @mock.patch('process_sequencing_run.subprocess.check_call')
+        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+        @mock.patch('process_sequencing_run.os.path.basename', side_effect = my_basename)
+        @mock.patch('process_sequencing_run.os')
+        @mock.patch('process_sequencing_run.glob')
+        def test_makes_correct_cat_call_for_single_end_protocol(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
+                mock_os.path.isdir.return_value = True
+                mock_original_dir = '/path/to/original/Project_ABC/Sample_XX_1/'
+                mock_target_dir	= '/path/to/final_projects_dir/2015/2'
+                mock_os.listdir.return_value = ['Sample_XX_1']
+                mock_glob_return_val = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L003_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
+                                                []]
+                mock_glob_return_val = [[os.path.join(mock_original_dir, S) for S in R] for R in mock_glob_return_val]
+                mock_glob.glob.side_effect = mock_glob_return_val
+                concatenate_fastq_files('/path/to/something', mock_target_dir, ['Project_ABC'], 'Sample_')
+		expected_call_A = 'cat /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L001_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L002_R1_001.fastq.gz /path/to/original/Project_ABC/Sample_XX_1/XX-1_S1_L003_R1_001.fastq.gz >/path/to/final_projects_dir/2015/2/Project_ABC/Sample_XX_1/XX_1_R1_001.fastq.gz'
+		calls = [mock.call(expected_call_A, shell=True)]		
+		mock_call.assert_has_calls(calls)
+
+
+        @mock.patch('process_sequencing_run.subprocess.check_call')
+        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+        @mock.patch('process_sequencing_run.os.path.basename', side_effect = my_basename)
+        @mock.patch('process_sequencing_run.os')
+        @mock.patch('process_sequencing_run.glob')
+        def test_issue_error_if_only_read2_files(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
+                mock_os.path.isdir.return_value = True
+                mock_original_dir = '/path/to/original/Project_ABC/Sample_XX_1/'
+                mock_target_dir	= '/path/to/final_projects_dir/2015/2'
+                mock_os.listdir.return_value = ['Sample_XX_1']
+                mock_glob_return_val = [[],['XX-1_S1_L001_R2_001.fastq.gz', 'XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L002_R2_001.fastq.gz']]
+                mock_glob_return_val = [[os.path.join(mock_original_dir, S) for S in R] for R in mock_glob_return_val]
+                mock_glob.glob.side_effect = mock_glob_return_val
 		with self.assertRaises(SystemExit):
-			concatenate_fastq_files('/path/to/something', ['Project_ABC'], 'Sample_')
+	                concatenate_fastq_files('/path/to/something', mock_target_dir, ['Project_ABC'], 'Sample_')
+
+
 
 
 
@@ -195,15 +260,17 @@ class TestConcatenationCall(unittest.TestCase):
 	@mock.patch('process_sequencing_run.os')
 	@mock.patch('process_sequencing_run.glob')
 	def test_issue_error_if_differing_number_of_files_in_paired_end_protocol(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
-		mock_os.path.isdir.return_value = True			
-		mock_os.listdir.return_value = ['Sample_XX_1', 'Sample_YY_2']
-		# note that we have only 2 entries for one of the mocked calls to glob 
-		mock_glob.glob.side_effect = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L003_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
-						['XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L001_R2_001.fastq.gz'],
-						['YY-2_S1_L001_R1_001.fastq.gz', 'YY-2_S1_L003_R1_001.fastq.gz', 'YY-2_S1_L002_R1_001.fastq.gz'],
-						['YY-2_S1_L003_R2_001.fastq.gz', 'YY-2_S1_L001_R2_001.fastq.gz', 'YY-2_S1_L002_R2_001.fastq.gz']]
+		mock_os.path.isdir.return_value = True	
+		mock_original_dir = '/path/to/original/Project_ABC/Sample_XX_1/'
+		mock_target_dir = '/path/to/final_projects_dir/2015/2'		
+		mock_os.listdir.return_value = ['Sample_XX_1']
+		mock_glob_return_val = [['XX-1_S1_L001_R1_001.fastq.gz', 'XX-1_S1_L002_R1_001.fastq.gz'],
+						['XX-1_S1_L003_R2_001.fastq.gz', 'XX-1_S1_L001_R2_001.fastq.gz', 'XX-1_S1_L002_R2_001.fastq.gz']]
+		mock_glob_return_val = [[os.path.join(mock_original_dir, S) for S in R] for R in mock_glob_return_val]
+		mock_glob.glob.side_effect = mock_glob_return_val
 		with self.assertRaises(SystemExit):
-			concatenate_fastq_files('/path/to/something', ['Project_ABC'], 'Sample_')
+			concatenate_fastq_files('/path/to/something', mock_target_dir, ['Project_ABC'], 'Sample_')
+
 
 
 
@@ -212,14 +279,22 @@ class TestConcatenationCall(unittest.TestCase):
 	@mock.patch('process_sequencing_run.os.path.basename', side_effect = my_basename)
 	@mock.patch('process_sequencing_run.os')
 	@mock.patch('process_sequencing_run.glob')
-	def test_issue_error_if_no_fastq_found(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
-		mock_os.path.isdir.return_value = True			
-		mock_os.listdir.return_value = ['Sample_XX_1', 'Sample_YY_2']
-		mock_glob.glob.side_effect = [[],[],
-						['YY-2_S1_L001_R1_001.fastq.gz', 'YY-2_S1_L003_R1_001.fastq.gz', 'YY-2_S1_L002_R1_001.fastq.gz'],
-						['YY-2_S1_L003_R2_001.fastq.gz', 'YY-2_S1_L001_R2_001.fastq.gz', 'YY-2_S1_L002_R2_001.fastq.gz']]
+	def test_issue_error_if_no_fastq_files_found(self, mock_glob, mock_os, mock_basename, mock_join, mock_call):
+		mock_os.path.isdir.return_value = True	
+		mock_original_dir = '/path/to/original/Project_ABC/Sample_XX_1/'
+		mock_target_dir = '/path/to/final_projects_dir/2015/2'		
+		mock_os.listdir.return_value = ['Sample_XX_1']
+		mock_glob_return_val = [[],[]]
+		mock_glob_return_val = [[os.path.join(mock_original_dir, S) for S in R] for R in mock_glob_return_val]
+		mock_glob.glob.side_effect = mock_glob_return_val
 		with self.assertRaises(SystemExit):
-			concatenate_fastq_files('/path/to/something', ['Project_ABC'], 'Sample_')
+			concatenate_fastq_files('/path/to/something', mock_target_dir, ['Project_ABC'], 'Sample_')
+
+
+
+
+
+
 
 
 
@@ -228,123 +303,115 @@ class TestCreatingFinalLocations(unittest.TestCase):
 	def my_join(*args):
 		return reduce(lambda x,y: os.path.join(x,y), args)
 
+
 	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)	
 	@mock.patch('process_sequencing_run.os')	
-	def test_makes_into_new_directory(self, mock_os, mock_join):
+	def test_create_project_structure(self, mock_os, mock_join):
+		mock_target = '/path/to/final_projects_dir/'
+		mock_bcl2fastq2_output_dir = '/path/to/bcl2fastq2_output'
+		sample_dir_names = ['Sample_AA', 'Sample_BB']
+		mock_os.listdir.return_value = sample_dir_names
+		mock_project_id = 'Project_XX'
+		mock_new_project_dir = os.path.join(mock_target, mock_project_id)
+		mock_sample_subdirs = [os.path.join(mock_new_project_dir, s) for s in sample_dir_names]
+		mock_calls = [mock.call(mock_new_project_dir)]
+	        mock_calls.extend([mock.call(s) for s in mock_sample_subdirs])
+		create_project_structure(mock_target, mock_bcl2fastq2_output_dir, mock_project_id, 'Sample_')
+                mock_os.mkdir.assert_has_calls(mock_calls)
+
+
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)	
+	@mock.patch('process_sequencing_run.os')	
+	def test_error_raised_if_mkdir_has_problem(self, mock_os, mock_join):
+		mock_target = '/path/to/final_projects_dir/'
+		mock_bcl2fastq2_output_dir = '/path/to/bcl2fastq2_output'
+		sample_dir_names = ['Sample_AA', 'Sample_BB']
+		mock_os.listdir.return_value = sample_dir_names
+		mock_project_id = 'Project_XX'
+		mock_new_project_dir = os.path.join(mock_target, mock_project_id)
+		mock_sample_subdirs = [os.path.join(mock_new_project_dir, s) for s in sample_dir_names]
+
+		mock_os.mkdir.side_effect = [OSError(17,'foo')]
+		with self.assertRaises(SystemExit):
+			create_project_structure(mock_target, mock_bcl2fastq2_output_dir, mock_project_id, 'Sample_')
+
+
+
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+	@mock.patch('process_sequencing_run.os')
+	def test_destination_directory_gets_lost(self, mock_os, mock_join):
 		'''
-		This tests that the project directory does not already have subdirectories for this year and/or month.
-		Create that time-stamped directory and place the project directories in there.
+		This covers the case where the directory allegedly existed (so OSError 17 was raised),
+		but the os.path.isdir returns 'False' for that directory when we attempt to move the files.
+		May not be a real possibility, but it is extra-defensive
+		'''
+		from datetime import datetime as date
+		today = date.today()
+		year = today.year
+		month = today.month
+	
+		mock_os.path.isdir.side_effect = [True, False]
+		mock_project_dir_path = '/path/to/projects_dir/'
+		mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
+		mock_os.makedirs.side_effect = OSError(17, 'foo')
+		with self.assertRaises(SystemExit):
+			create_final_locations('/path/to/bcl2fastq2_output', mock_project_dir_path, ['Project_ABC'], 'Sample_')
+
+
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+	@mock.patch('process_sequencing_run.os')
+	def test_making_destination_directory_raises_unexpected_exception(self, mock_os, mock_join):
+		from datetime import datetime as date
+		today = date.today()
+		year = today.year
+		month = today.month
+
+		mock_os.path.isdir.return_value = True
+		mock_project_dir_path = '/path/to/projects_dir/'
+		mock_os.makedirs.side_effect = OSError(2, 'foo')
+		with self.assertRaises(SystemExit):
+			create_final_locations('/path/to/bcl2fastq2_output', mock_project_dir_path, ['Project_ABC'], 'Sample_')
+
+
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+	@mock.patch('process_sequencing_run.os')
+	def test_destination_directory_exists_already(self, mock_os, mock_join):
+		from datetime import datetime as date
+		today = date.today()
+		year = today.year
+		month = today.month
+
+		mock_os.path.isdir.return_value = True
+		mock_project_dir_path = '/path/to/final_projects_dir/'
+		mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
+		mock_os.makedirs.side_effect = OSError(17, 'foo')
+		create_final_locations('/path/to/bcl2fastq2_output', mock_project_dir_path, ['Project_ABC'], 'Sample_')
+		mock_os.makedirs.assert_called_with(mock_target)
+
+
+	@mock.patch('process_sequencing_run.create_project_structure')
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+	@mock.patch('process_sequencing_run.os')
+	def test_makes_proper_calls_for_creating_project_hierarchy(self, mock_os, mock_join, mock_called_method):
+		'''
+		Ensures that the call to the method create_project_structure(...) is as expected.  That method
+		is tested independently elsewhere
 		'''
 		from datetime import datetime as date
 		today = date.today()
 		year = today.year
 		month = today.month
 
-		mock_os.path.isdir.return_value = True # the 'home' directory is there
+		mock_os.path.isdir.return_value = True
 		mock_project_dir_path = '/path/to/final_projects_dir/'
-		mock_target = os.path.join(mock_project_dir_path, str(year), str(month)) # the full path to the time-stamped dir
-		final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC'])
-		mock_os.makedirs.assert_called_with(mock_target)
-		mock_os.mkdir.assert_called_with(os.path.join(mock_target, 'Project_ABC'))
-		self.assertEqual(final_locations, [os.path.join(mock_target, 'Project_ABC')])
+		mock_bcl2fastq2_dir_path = '/path/to/bcl2fastq2_output_dir/'
+		mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
+		mock_os.makedirs.side_effect = OSError(17, 'foo')
+		create_final_locations(mock_bcl2fastq2_dir_path, mock_project_dir_path, ['Project_ABC', 'Project_DEF'], 'Sample_')
+		mock_calls = [mock.call(mock_target, mock_bcl2fastq2_dir_path, 'Project_ABC', 'Sample_'),
+				mock.call(mock_target, mock_bcl2fastq2_dir_path, 'Project_DEF', 'Sample_')]
 
-
-        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
-        @mock.patch('process_sequencing_run.os')
-        def test_destination_directory_exists_already(self, mock_os, mock_join):
-                from datetime import datetime as date
-                today = date.today()
-                year = today.year
-                month = today.month
-
-                mock_os.path.isdir.return_value = True
-                mock_project_dir_path = '/path/to/final_projects_dir/'
-                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
-                mock_os.makedirs.side_effect = OSError(17, 'foo')
-                final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC'])
-                mock_os.makedirs.assert_called_with(mock_target)
-                mock_os.mkdir.assert_called_with(os.path.join(mock_target, 'Project_ABC'))
-                self.assertEqual(final_locations, [os.path.join(mock_target, 'Project_ABC')])
-
-
-        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
-        @mock.patch('process_sequencing_run.os')
-        def test_cannot_create_project_dir_raises_error(self, mock_os, mock_join):
-                from datetime import datetime as date
-                today = date.today()
-                year = today.year
-                month = today.month
-
-                mock_os.path.isdir.return_value = True
-                mock_project_dir_path = '/path/to/final_projects_dir/'
-                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
-                mock_os.makedirs.side_effect = OSError(17, 'foo')
-                mock_os.mkdir.side_effect = OSError(2, 'foo')
-		with self.assertRaises(SystemExit):
-	                final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC'])
-
-
-
-        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
-        @mock.patch('process_sequencing_run.os')
-        def test_moving_multiple_projects(self, mock_os, mock_join):
-                from datetime import datetime as date
-                today = date.today()
-                year = today.year
-                month = today.month
-
-                mock_os.path.isdir.return_value = True
-                mock_project_dir_path = '/path/to/final_projects_dir/'
-                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
-                mock_os.makedirs.side_effect = OSError(17, 'foo') # the time-stamped dir already exists
-                final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC', 'Project_DEF'])
-                mock_os.makedirs.assert_called_with(mock_target)
-		mock_calls = [
-			mock.call(os.path.join(mock_target, 'Project_ABC')),
-			mock.call(os.path.join(mock_target, 'Project_DEF'))
-		]
-                mock_os.mkdir.assert_has_calls(mock_calls)
-                self.assertEqual(final_locations, [os.path.join(mock_target, 'Project_ABC'), os.path.join(mock_target, 'Project_DEF')])
-
-
-
-
-        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
-        @mock.patch('process_sequencing_run.os')
-        def test_making_destination_directory_raises_unexpected_exception(self, mock_os, mock_join):
-                from datetime import datetime as date
-                today = date.today()
-                year = today.year
-                month = today.month
-
-                mock_os.path.isdir.return_value = True
-                mock_project_dir_path = '/path/to/projects_dir/'
-                mock_os.makedirs.side_effect = OSError(2, 'foo')
-		with self.assertRaises(SystemExit):
-	                create_final_locations(mock_project_dir_path, ['Project_ABC'])
-
-
-
-        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
-        @mock.patch('process_sequencing_run.os')
-        def test_destination_directory_gets_lost(self, mock_os, mock_join):
-		'''
-		This covers the case where the directory allegedly existed (so OSError 17 was raised),
-		but the os.path.isdir returns 'False' for that directory when we attempt to move the files.
-		May not be a real possibility, but it is extra-defensive
-		'''
-                from datetime import datetime as date
-                today = date.today()
-                year = today.year
-                month = today.month
-
-                mock_os.path.isdir.side_effect = [True, False]
-                mock_project_dir_path = '/path/to/projects_dir/'
-                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
-                mock_os.makedirs.side_effect = OSError(17, 'foo')
-                with self.assertRaises(SystemExit):
-                       create_final_locations(mock_project_dir_path, ['Project_ABC'])
-
+		mock_called_method.assert_has_calls(mock_calls)
 
 
 if __name__ == '__main__':

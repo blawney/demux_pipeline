@@ -138,12 +138,15 @@ def run_demux(bcl2fastq2_path, run_dir_path, output_dir_path):
 		sys.exit(1)
 
 
-def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_prefix):
+def concatenate_fastq_files(output_directory_path, target_directory_path, project_id_list, sample_dir_prefix):
 	"""
 	This method scans the output and concatenates the fastq files for each sample and read number.
 	That is, the NextSeq output (in general) has a fastq file for each lane and sample and we need to 
 	concatenate the lane files into a single fastq file for that sample.  For paired-end protocol, need
 	to do this for both the R1 and R2 reads.
+
+	'target_directory_path' is a time-stamped subdirectory of the more general output projects directory
+	This is where the empty directories were already setup
 	"""
 
 	for project_id in project_id_list:
@@ -151,15 +154,16 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 		project_dir = os.path.join(output_directory_path, project_id)
 
 		# get the sample-specific subdirectories and append the path to the project directory in front (for full path name):
-		sample_dir_names = [d for d in os.listdir(project_dir) if d.startswith(sample_dir_prefix)] # just the names- for 
-		sample_dirs = [os.path.join(project_dir, d) for d in sample_dir_names] #make full paths
+		# this gives the fully qualified location of the original fastq files (by lane)
+		sample_dirs = [os.path.join(project_dir, d) for d in os.listdir(project_dir) if d.startswith(sample_dir_prefix)] 
 
 		# double check that they are actually directories:
 		sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
 
 		for sample_dir in sample_dirs:
 			# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
-			sample_name = os.path.basename(sample_dir).strip(sample_dir_prefix)
+			sample_name_with_prefix = os.path.basename(sample_dir)
+			sample_name = sample_name_with_prefix.strip(sample_dir_prefix)
 
 			# get all the fastq files as lists.  Note the sort so they are concatenated in the same order for paired-end protocol
 			read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R1_001.fastq.gz')))			
@@ -173,6 +177,10 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 			# make file names for the merged files:
 			merged_read_1_fastq = sample_name + '_R1_001.fastq.gz'
 			merged_read_2_fastq = sample_name + '_R2_001.fastq.gz'
+
+			# construct full paths to the final files:
+			merged_read_1_fastq = os.path.join(target_directory_path, project_id, sample_name_with_prefix, merged_read_1_fastq)
+			merged_read_2_fastq = os.path.join(target_directory_path, project_id, sample_name_with_prefix, merged_read_2_fastq)
 
 			# an inline method to compose the concatenation command:
 			write_call = lambda infiles,outfile: 'cat '+ ' '.join(infiles) + ' >' + outfile
@@ -195,11 +203,35 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 					sys.exit(1)
 					
 
+def create_project_structure(target_dir, bcl2fastq2_outdir, project_id, sample_dir_prefix):
+	"""
+	This creates the project and sample subdirectories within the target_dir.
+	Extracted out from another method for easier unit testing
+	"""
+	orig_project_dir_path = os.path.join(bcl2fastq2_outdir, project_id)
+	sample_dirs = [sd for sd in os.listdir(orig_project_dir_path) if sd.startswith(sample_dir_prefix)]
+	logging.info('Creating directory for %s at %s' % (project_id, target_dir))
+	new_project_dir = os.path.join(target_dir, project_id)
+	try:
+		os.mkdir(new_project_dir)
+		os.chmod(new_project_dir, 0774)
+		for sample_dir in sample_dirs:
+			sample_dir = os.path.join(new_project_dir, sample_dir)
+			os.mkdir(sample_dir)
+			os.chmod(sample_dir, 0774)
+	except OSError as ex:
+		if ex.errno == 17: # directory was already there
+			logging.info('Directory was already present.  Generally this should not occur, so something is likely wrong.')
+			sys.exit(1)
+		else:
+			logging.error('There was an issue creating a directory at %s' % new_project_dir)
+			sys.exit(1)
 
-def create_final_locations(projects_dir, project_id_list):
+
+
+def create_final_locations(bcl2fastq2_outdir, projects_dir, project_id_list, sample_dir_prefix):
 	"""
 	This sets up the empty directory structure where the final merged FASTQ files will be
-	Note that this just sets up the empty project directories and not the sample-specific directories beneath them
 	"""	
 
 	# for organizing projects by date:
@@ -215,6 +247,7 @@ def create_final_locations(projects_dir, project_id_list):
                 # Any other errors encountered in creating the directory will cause pipeline to exit
                 try:
                     	os.makedirs(target_dir)
+			os.chmod(target_dir, 0774)
                 except OSError as ex:
                         if ex.errno != 17: # 17 indicates that the directory was already there.
                                 logging.error('Exception occured:')
@@ -222,18 +255,9 @@ def create_final_locations(projects_dir, project_id_list):
                                 sys.exit(1)
                 # check that we do have a destination directory to go to.
                 if os.path.isdir(target_dir):
-                        final_locations = []
                         for project_id in project_id_list:
-                                logging.info('Creating directory for %s at %s' % (project_id, target_dir))
-                                new_project_dir = os.path.join(target_dir, project_id)
-				try:
-					os.mkdir(new_project_dir)
-					os.chmod(new_project_dir, 0774)			
-	                                final_locations.append(new_project_dir)
-				except OSError:
-					logging.error('There was an issue creating a directory at %s' % new_project_dir)
-					sys.exit(1)
-                        return final_locations
+				create_project_structure(target_dir, bcl2fastq2_outdir, project_id, sample_dir_prefix)
+			return target_dir
                 else:
                      	logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
                         sys.exit(1)
@@ -277,9 +301,8 @@ def process():
 	project_id_list = check_samplesheet(run_directory_path, sample_dir_prefix)
 	run_demux(bcl2fastq2_path, run_directory_path, output_directory_path)
 	correct_permissions(output_directory_path)
-	create_final_locations(output_directory_path, final_destination_path, project_id_list)
-	concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_prefix)
-	final_locations = relocate_fastq_files(output_directory_path, final_destination_path, project_id_list)
+	target_directory = create_final_locations(output_directory_path, final_destination_path, project_id_list, sample_dir_prefix)
+	concatenate_fastq_files(output_directory_path, target_directory, project_id_list, sample_dir_prefix)
 	run_fastqc()
 	
 
