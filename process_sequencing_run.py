@@ -1,5 +1,6 @@
 #!/cccbstore-rc/projects/cccb/apps/Python-2.7.1/python
 
+import logging
 import sys
 import os
 import re
@@ -22,7 +23,7 @@ def parse_config_file():
 		parser.readfp(cfg_files[0])
 		return parser.defaults()
 	else:
-		print 'There were %d config (*cfg) files found in %s.  Need exactly 1.  Correct this.' % (len(cfg_files), current_dir)
+		logging.error('There were %d config (*cfg) files found in %s.  Need exactly 1.  Correct this.' % (len(cfg_files), current_dir))
 		sys.exit(1)
 
 
@@ -56,10 +57,10 @@ def create_output_directory(run_directory_path, bcl2fastq2_output_dirname):
 			os.mkdir(output_directory_path)
 			os.chmod(output_directory_path, 0774)
 		except:
-			print 'An exception occurred when attempting to create the output directory at: %s' % output_directory_path
+			logging.error('An exception occurred when attempting to create the output directory at: %s' % output_directory_path)
 			sys.exit(1)
 	else:
-		print 'The path supplied as the run directory is not actually a directory.  Please check.'
+		logging.error('The path supplied as the run directory is not actually a directory.  Please check.')
 		sys.exit(1)
 
 
@@ -100,7 +101,7 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 		try:
 			sample_annotation_section = re.findall(r'\[Data\][^\[]*', open(samplesheet_path).read())[0]	
 		except IndexError:
-			print 'Could not find the [Data] section in the SampleSheet.csv file'
+			logging.error('Could not find the [Data] section in the SampleSheet.csv file')
 			sys.exit(1)
  
 		# this statement gets us a list, where each item in the list is the annotation line in the sample sheet.  
@@ -113,15 +114,15 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 		
 		if not all(lines_valid):
 			problem_lines = [i+1 for i,k in enumerate(lines_valid) if k == False]
-			print 'There was some problem with the SampleSheet.csv'
-			print 'Problem lines: %s' % problem_lines
+			logging.error('There was some problem with the SampleSheet.csv')
+			logging.error('Problem lines: %s' % problem_lines)
 			sys.exit(1)
 
 		# now get a list of all the projects that we are processing in this sampling run:
 		project_id_list = [line.split(',')[6] for line in annotation_lines]
 		return project_id_list
 	else:
-		print 'Could not locate a SampleSheet.csv file in %s ' % run_dir_path
+		logging.error('Could not locate a SampleSheet.csv file in %s ' % run_dir_path)
 		sys.exit(1)
 
 
@@ -133,7 +134,7 @@ def run_demux(bcl2fastq2_path, run_dir_path, output_dir_path):
 		call_command = bcl2fastq2_path + '--output-dir' + output_dir_path + '--runfolder-dir' + run_dir_path
 		subprocess.check_call(call_command, shell = True)
 	except subprocess.CalledProcessError:
-		print 'The demux process had non-zero exit status.  Check the log.'
+		logging.error('The demux process had non-zero exit status.  Check the log.')
 		sys.exit(1)
 
 
@@ -166,7 +167,7 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 
 			# need at least the read 1 files to continue
 			if len(read_1_fastq_files) == 0:
-				print 'Did not find any fastq files in %s directory.' % sample_dir
+				logging.error('Did not find any fastq files in %s directory.' % sample_dir)
 				sys.exit(1)			
 
 			# make file names for the merged files:
@@ -182,17 +183,61 @@ def concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_p
 				if len(read_2_fastq_files) == len(read_1_fastq_files):
 					call_list.append(write_call(read_2_fastq_files, merged_read_2_fastq))
 				else:
-					print 'Differing number of FASTQ files between R1 and R2'
+					logging.error('Differing number of FASTQ files between R1 and R2')
 					sys.exit(1)
 
 			for call in call_list:
 				try:
-					print 'Issuing system command: %s ' % call
+					logging.info('Issuing system command: %s ' % call)
 					subprocess.check_call( call, shell = True )			
 				except subprocess.CalledProcessError:
-					print 'The concatentation of the lane-specific fastq files failed somehow'
+					logging.error('The concatentation of the lane-specific fastq files failed somehow')
 					sys.exit(1)
 					
+
+
+def create_final_locations(projects_dir, project_id_list):
+	"""
+	This sets up the empty directory structure where the final merged FASTQ files will be
+	"""	
+
+	# for organizing projects by date:
+        today = date.today()
+        year = today.year
+        month = today.month
+
+        # double-check that the config file had a valid path to a directory
+        if os.path.isdir(projects_dir):
+                target_dir = os.path.join(projects_dir, str(year), str(month))
+
+                # try to create the directory-- it may already exist, in which case we catch the exception and move on.
+                # Any other errors encountered in creating the directory will cause pipeline to exit
+                try:
+                    	os.makedirs(target_dir)
+                except OSError as ex:
+                        if ex.errno != 17: # 17 indicates that the directory was already there.
+                                logging.error('Exception occured:')
+                                logging.error(ex.strerror)
+                                sys.exit(1)
+                # check that we do have a destination directory to go to.
+                if os.path.isdir(target_dir):
+                        final_locations = []
+                        for project_id in project_id_list:
+                                logging.info('Creating directory for %s at %s' % (project_id, target_dir))
+                                new_project_dir = os.path.join(target_dir, project_id)
+				try:
+					os.mkdir(new_project_dir)
+					os.chmod(new_project_dir, 0774)			
+	                                final_locations.append(new_project_dir)
+				except OSError:
+					logging.error('There was an issue creating a directory at %s' % new_project_dir)
+					sys.exit(1)
+                        return final_locations
+                else:
+                     	logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
+                        sys.exit(1)
+
+
 
 
 def relocate_fastq_files(src_dir, projects_dir, project_id_list):
@@ -207,7 +252,7 @@ def relocate_fastq_files(src_dir, projects_dir, project_id_list):
 
 	# double-check that the config file had a valid path to a directory
 	if os.path.isdir(projects_dir):
-		target_dir = os.path.join(projects_dir, year, month)
+		target_dir = os.path.join(projects_dir, str(year), str(month))
 
 		# try to create the directory-- it may already exist, in which case we catch the exception and move on.
 		# Any other errors encountered in creating the directory will cause pipeline to exit
@@ -215,17 +260,20 @@ def relocate_fastq_files(src_dir, projects_dir, project_id_list):
 			os.makedirs(target_dir)
 		except OSError as ex:
 			if ex.errno != 17: # 17 indicates that the directory was already there.
-				print 'Exception occured:'
-				print ex.strerror
+				logging.error('Exception occured:')
+				logging.error(ex.strerror)
 				sys.exit(1)
-
-		# check that we do have a 
+		# check that we do have a destination directory to go to.
 		if os.path.isdir(target_dir):
+			final_locations = []
 			for project_id in project_id_list:
+				logging.info('Moving %s from %s to %s' % (project_id, src_dir, target_dir))
 				shutil.move( os.path.join(src_dir, project_id), target_dir )
+				final_locations.append(os.path.join(target_dir, project_id))
+			return final_locations
 		else:
-			print 'Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir		
-
+			logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
+			sys.exit(1)
 
 
 
@@ -239,9 +287,20 @@ def correct_permissions(bcl2fastq2_outdir):
 		for f in files:
 			os.chmod(os.path.join(root, f), 0774)
 
+def run_fastqc():
+	pass
+
 
 
 def process():
+	root = logging.getLogger()
+	root.setLevel(logging.INFO)
+	ch = logging.StreamHandler(sys.stdout)
+	ch.setLevel(logging.DEBUG)
+	formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+	ch.setFormatter(formatter)
+	root.addHandler(ch)
+
 	config_params_dict = parse_config_file()
 
 	bcl2fastq2_path = config_params_dict.get('bcl2fastq2_path')
@@ -254,8 +313,11 @@ def process():
 	project_id_list = check_samplesheet(run_directory_path, sample_dir_prefix)
 	run_demux(bcl2fastq2_path, run_directory_path, output_directory_path)
 	correct_permissions(output_directory_path)
+	create_final_locations(output_directory_path, final_destination_path, project_id_list)
 	concatenate_fastq_files(output_directory_path, project_id_list, sample_dir_prefix)
-	relocate_fastq_files(output_directory_path, final_destination_path, project_id_list)
+	final_locations = relocate_fastq_files(output_directory_path, final_destination_path, project_id_list)
+	run_fastqc()
+	
 
 
 

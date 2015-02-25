@@ -1,3 +1,6 @@
+import logging
+logging.disable(logging.CRITICAL)
+
 import unittest
 import mock
 import __builtin__
@@ -104,6 +107,7 @@ class TestOutputDirCreation(unittest.TestCase):
 		create_output_directory(run_dir_path, bcl2fastq2_out)			
 		mock_os.mkdir.assert_called_once_with('/path/to/rundir/bcl2fastq2_output')
 		mock_os.chmod.assert_called_once_with('/path/to/rundir/bcl2fastq2_output', 0774)
+
 
 
 class TestConcatenationCall(unittest.TestCase):
@@ -219,21 +223,127 @@ class TestConcatenationCall(unittest.TestCase):
 
 
 
+class TestCreatingFinalLocations(unittest.TestCase):
+
+	def my_join(*args):
+		return reduce(lambda x,y: os.path.join(x,y), args)
+
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)	
+	@mock.patch('process_sequencing_run.os')	
+	def test_makes_into_new_directory(self, mock_os, mock_join):
+		'''
+		This tests that the project directory does not already have subdirectories for this year and/or month.
+		Create that time-stamped directory and place the project directories in there.
+		'''
+		from datetime import datetime as date
+		today = date.today()
+		year = today.year
+		month = today.month
+
+		mock_os.path.isdir.return_value = True # the 'home' directory is there
+		mock_project_dir_path = '/path/to/final_projects_dir/'
+		mock_target = os.path.join(mock_project_dir_path, str(year), str(month)) # the full path to the time-stamped dir
+		final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC'])
+		mock_os.makedirs.assert_called_with(mock_target)
+		mock_os.mkdir.assert_called_with(os.path.join(mock_target, 'Project_ABC'))
+		self.assertEqual(final_locations, [os.path.join(mock_target, 'Project_ABC')])
+
+
+        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+        @mock.patch('process_sequencing_run.os')
+        def test_destination_directory_exists_already(self, mock_os, mock_join):
+                from datetime import datetime as date
+                today = date.today()
+                year = today.year
+                month = today.month
+
+                mock_os.path.isdir.return_value = True
+                mock_project_dir_path = '/path/to/final_projects_dir/'
+                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
+                mock_os.makedirs.side_effect = OSError(17, 'foo')
+                final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC'])
+                mock_os.makedirs.assert_called_with(mock_target)
+                mock_os.mkdir.assert_called_with(os.path.join(mock_target, 'Project_ABC'))
+                self.assertEqual(final_locations, [os.path.join(mock_target, 'Project_ABC')])
+
+
+        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+        @mock.patch('process_sequencing_run.os')
+        def test_cannot_create_project_dir_raises_error(self, mock_os, mock_join):
+                from datetime import datetime as date
+                today = date.today()
+                year = today.year
+                month = today.month
+
+                mock_os.path.isdir.return_value = True
+                mock_project_dir_path = '/path/to/final_projects_dir/'
+                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
+                mock_os.makedirs.side_effect = OSError(17, 'foo')
+                mock_os.mkdir.side_effect = OSError(2, 'foo')
+		with self.assertRaises(SystemExit):
+	                final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC'])
+
+
+
+        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+        @mock.patch('process_sequencing_run.os')
+        def test_moving_multiple_projects(self, mock_os, mock_join):
+                from datetime import datetime as date
+                today = date.today()
+                year = today.year
+                month = today.month
+
+                mock_os.path.isdir.return_value = True
+                mock_project_dir_path = '/path/to/final_projects_dir/'
+                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
+                mock_os.makedirs.side_effect = OSError(17, 'foo') # the time-stamped dir already exists
+                final_locations = create_final_locations(mock_project_dir_path, ['Project_ABC', 'Project_DEF'])
+                mock_os.makedirs.assert_called_with(mock_target)
+		mock_calls = [
+			mock.call(os.path.join(mock_target, 'Project_ABC')),
+			mock.call(os.path.join(mock_target, 'Project_DEF'))
+		]
+                mock_os.mkdir.assert_has_calls(mock_calls)
+                self.assertEqual(final_locations, [os.path.join(mock_target, 'Project_ABC'), os.path.join(mock_target, 'Project_DEF')])
 
 
 
 
+        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+        @mock.patch('process_sequencing_run.os')
+        def test_making_destination_directory_raises_unexpected_exception(self, mock_os, mock_join):
+                from datetime import datetime as date
+                today = date.today()
+                year = today.year
+                month = today.month
+
+                mock_os.path.isdir.return_value = True
+                mock_project_dir_path = '/path/to/projects_dir/'
+                mock_os.makedirs.side_effect = OSError(2, 'foo')
+		with self.assertRaises(SystemExit):
+	                create_final_locations(mock_project_dir_path, ['Project_ABC'])
 
 
 
+        @mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+        @mock.patch('process_sequencing_run.os')
+        def test_destination_directory_gets_lost(self, mock_os, mock_join):
+		'''
+		This covers the case where the directory allegedly existed (so OSError 17 was raised),
+		but the os.path.isdir returns 'False' for that directory when we attempt to move the files.
+		May not be a real possibility, but it is extra-defensive
+		'''
+                from datetime import datetime as date
+                today = date.today()
+                year = today.year
+                month = today.month
 
-
-
-
-
-
-
-
+                mock_os.path.isdir.side_effect = [True, False]
+                mock_project_dir_path = '/path/to/projects_dir/'
+                mock_target = os.path.join(mock_project_dir_path, str(year), str(month))
+                mock_os.makedirs.side_effect = OSError(17, 'foo')
+                with self.assertRaises(SystemExit):
+                       create_final_locations(mock_project_dir_path, ['Project_ABC'])
 
 
 
