@@ -106,7 +106,51 @@ class TestOutputDirCreation(unittest.TestCase):
 		bcl2fastq2_out = 'bcl2fastq2_output'
 		create_output_directory(run_dir_path, bcl2fastq2_out)			
 		mock_os.mkdir.assert_called_once_with('/path/to/rundir/bcl2fastq2_output')
-		mock_os.chmod.assert_called_once_with('/path/to/rundir/bcl2fastq2_output', 0774)
+
+
+
+class TestFastQCCall(unittest.TestCase):
+	
+        def my_join(a,b):
+                return os.path.join(a,b)
+
+	@mock.patch('process_sequencing_run.subprocess.check_call')
+	@mock.patch('process_sequencing_run.os.path.join', side_effect = my_join)
+	@mock.patch('process_sequencing_run.os')		
+	def test_fastqc_calls_are_correct(self, mock_os, mock_join, mock_check_call_method):
+
+		project_id_list = ['Project_A', 'Project_B']
+		mock_os.walk.return_value = [('/path/to/target/dir', ['Project_A', 'Project_B'], []),
+						('/path/to/target/dir/Project_A', ['Sample_A2', 'Sample_A1'], []),
+						('/path/to/target/dir/Project_A/Sample_A2', [], ['A2_1.fastq.gz', 'A2_2.fastq.gz']),
+						('/path/to/target/dir/Project_A/Sample_A1', [], ['A1_1.fastq.gz', 'A1_2.fastq.gz']),
+						('/path/to/target/dir/Project_B', ['Sample_B2', 'Sample_B1'], []),
+						('/path/to/target/dir/Project_B/Sample_B2', [], ['B2_1.fastq.gz', 'B2_2.fastq.gz']),
+						('/path/to/target/dir/Project_B/Sample_B1', [], ['B1_1.fastq.gz', 'B1_2.fastq.gz'])
+					]
+                expected_call_A = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_A/Sample_A1/A1_1.fastq.gz'
+		expected_call_B = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_A/Sample_A1/A1_2.fastq.gz'
+                expected_call_C = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_A/Sample_A2/A2_1.fastq.gz'
+                expected_call_D = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_A/Sample_A2/A2_2.fastq.gz'
+                expected_call_E = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_B/Sample_B1/B1_1.fastq.gz'
+                expected_call_F = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_B/Sample_B1/B1_2.fastq.gz'
+                expected_call_G = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_B/Sample_B2/B2_1.fastq.gz'
+                expected_call_H = '/cccbstore-rc/projects/cccb/apps/FastQC/fastqc /path/to/target/dir/Project_B/Sample_B2/B2_2.fastq.gz'
+
+                calls = [mock.call(expected_call_A, shell=True),
+                        mock.call(expected_call_B, shell=True),
+                        mock.call(expected_call_C, shell=True),
+                	mock.call(expected_call_D, shell=True),
+                        mock.call(expected_call_E, shell=True),
+                        mock.call(expected_call_F, shell=True),
+                        mock.call(expected_call_G, shell=True),
+                        mock.call(expected_call_H, shell=True)]
+
+		run_fastqc('/cccbstore-rc/projects/cccb/apps/FastQC/fastqc', '/path/to/target/dir/', project_id_list)
+
+                mock_check_call_method.assert_has_calls(calls, any_order = True)
+
+
 
 
 

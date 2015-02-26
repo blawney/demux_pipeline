@@ -47,15 +47,16 @@ def parse_commandline_args():
 
 def create_output_directory(run_directory_path, bcl2fastq2_output_dirname):
 	"""
-	This method takes a path to the run directory and attempts to create an output
-	directory for the bcl2fastq2 output, returning the path.  If it cannot (due to write permissions, etc)
+	This method takes a path to the sequencing run directory and attempts to create an output
+	directory for the bcl2fastq2 output.  If it cannot (due to write permissions, etc)
 	then it exits the script and issues a message
 	"""
 	if os.path.isdir(run_directory_path):
 		try:
 			output_directory_path = os.path.join(run_directory_path, bcl2fastq2_output_dirname)
 			os.mkdir(output_directory_path)
-			os.chmod(output_directory_path, 0774)
+			correct_permissions(output_directory_path)
+			return output_directory_path
 		except:
 			logging.error('An exception occurred when attempting to create the output directory at: %s' % output_directory_path)
 			sys.exit(1)
@@ -214,11 +215,11 @@ def create_project_structure(target_dir, bcl2fastq2_outdir, project_id, sample_d
 	new_project_dir = os.path.join(target_dir, project_id)
 	try:
 		os.mkdir(new_project_dir)
-		os.chmod(new_project_dir, 0774)
 		for sample_dir in sample_dirs:
 			sample_dir = os.path.join(new_project_dir, sample_dir)
 			os.mkdir(sample_dir)
-			os.chmod(sample_dir, 0774)
+		# change the permissions for everything underneath this new directory (including the sample-specific directories)
+		correct_permissions(new_project_dir)
 	except OSError as ex:
 		if ex.errno == 17: # directory was already there
 			logging.info('Directory was already present.  Generally this should not occur, so something is likely wrong.')
@@ -231,7 +232,8 @@ def create_project_structure(target_dir, bcl2fastq2_outdir, project_id, sample_d
 
 def create_final_locations(bcl2fastq2_outdir, projects_dir, project_id_list, sample_dir_prefix):
 	"""
-	This sets up the empty directory structure where the final merged FASTQ files will be
+	This function creates a time-stamped directory (only year+month)
+	and sets up the empty directory structure where the final merged FASTQ files will be
 	"""	
 
 	# for organizing projects by date:
@@ -247,7 +249,7 @@ def create_final_locations(bcl2fastq2_outdir, projects_dir, project_id_list, sam
                 # Any other errors encountered in creating the directory will cause pipeline to exit
                 try:
                     	os.makedirs(target_dir)
-			os.chmod(target_dir, 0774)
+			correct_permissions(target_dir)
                 except OSError as ex:
                         if ex.errno != 17: # 17 indicates that the directory was already there.
                                 logging.error('Exception occured:')
@@ -265,22 +267,42 @@ def create_final_locations(bcl2fastq2_outdir, projects_dir, project_id_list, sam
 
 
 
-def correct_permissions(bcl2fastq2_outdir):
+def correct_permissions(directory):
 	"""
 	Gives write privileges to the biocomp group (if not already there)
+	Recurses through all directories and files underneath the path passed as the argument
 	"""
-	for root, dirs, files in os.walk(bcl2fastq2_outdir):
+	for root, dirs, files in os.walk(directory):
 		for d in dirs:
 			os.chmod(os.path.join(root, d), 0774)
 		for f in files:
 			os.chmod(os.path.join(root, f), 0774)
 
-def run_fastqc():
-	pass
+
+
+def run_fastqc(fastqc_path, target_directory, project_id_list):
+	for project_id in project_id_list:
+		project_dir = os.path.join(target_directory, project_id)
+		fastq_files = []
+		for root, dirs, files in os.walk(project_dir):
+			for f in files:
+				if f.lower().endswith('fastq.gz'):
+					fastq_files.append(os.path.join(root, f))
+
+		for fq in fastq_files:
+			try:
+				call_command = fastqc_path + ' ' + fq
+				subprocess.check_call(call_command, shell = True)
+			except subprocess.CalledProcessError:
+				logging.error('The fastqc process on fastq file (%s) had non-zero exit status.  Check the log.' % fq)
+				sys.exit(1)
+
 
 
 
 def process():
+
+	# setup a logger that prints to stdout:
 	root = logging.getLogger()
 	root.setLevel(logging.INFO)
 	ch = logging.StreamHandler(sys.stdout)
@@ -289,21 +311,34 @@ def process():
 	ch.setFormatter(formatter)
 	root.addHandler(ch)
 
+	# read the configuration file to get the constants:
 	config_params_dict = parse_config_file()
-
 	bcl2fastq2_path = config_params_dict.get('bcl2fastq2_path')
 	bcl2fastq2_output_dir = config_params_dict.get('bcl2fastq2_output_dir')
 	sample_dir_prefix = config_params_dict('sample_dir_prefix')
 	final_destination_path = config_params_dict.get('destination_path')
+	fastqc_path = config_params_dict.get('fastqc_path')
 
+	# kickoff the processing:
 	run_directory_path = parse_commandline_args()
+
+	# create the location where the demux process will drop the fastq files:
 	output_directory_path = create_output_directory(run_directory_path, bcl2fastq2_output_dir)
+
+	# parse out the projects and also do a check on the SampleSheet.csv to ensure the correct parameters have been entered
 	project_id_list = check_samplesheet(run_directory_path, sample_dir_prefix)
-	run_demux(bcl2fastq2_path, run_directory_path, output_directory_path)
-	correct_permissions(output_directory_path)
+
+	# actually start the demux process:
+	run_demux(bcl2fastq2_path, run_diretory_path, output_directory_path)
+
+	# sets up the directory structure for the final, merged fastq files.
 	target_directory = create_final_locations(output_directory_path, final_destination_path, project_id_list, sample_dir_prefix)
+
+	# concatenate the fastq.gz files and place them in the final destination (NOT in the instrument directory)
 	concatenate_fastq_files(output_directory_path, target_directory, project_id_list, sample_dir_prefix)
-	run_fastqc()
+
+	# run the fastQC process:
+	run_fastqc(fastqc_path, target_directory, project_id_list)
 	
 
 
