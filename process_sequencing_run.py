@@ -7,6 +7,7 @@ import re
 import subprocess
 import shutil
 import glob
+from report.publish import publish
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
 
@@ -339,7 +340,8 @@ def process():
 
 	# run the fastQC process:
 	run_fastqc(fastqc_path, target_directory, project_id_list)
-	
+
+	publish(target_dir, project_id_list, sample_dir_prefix)	
 
 
 

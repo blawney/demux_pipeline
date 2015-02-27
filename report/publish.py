@@ -159,15 +159,16 @@ def write_reports(date_stamped_delivery_dir, parameters_dict, project_to_sample_
 			outfile.write(html_report)			
 		
 
-def link_to_libraries(report_directory, lib_dirname, date_stamped_delivery_dir, project_id_list):
+def copy_libraries(report_directory, lib_dirname, date_stamped_delivery_dir, project_id_list):
 	"""
 	Creates a symlink to the css/js/etc libraries from within each project directory
 	'report_directory' refers to the directory of THIS file.  
 	"""
-	print 'linking!!!'
 	library_location = os.path.join(report_directory, lib_dirname)
 	final_project_dirs = [os.path.join(date_stamped_delivery_dir, d) for d in project_id_list]
 	[shutil.copytree(library_location, os.path.join(fpd, lib_dirname)) for fpd in final_project_dirs]
+
+
 
 def publish(origin_dir, project_id_list, sample_dir_prefix): 
 	
@@ -185,8 +186,8 @@ def publish(origin_dir, project_id_list, sample_dir_prefix):
 	# link to the orignal files:
 	project_to_sample_map = setup_links(date_stamped_delivery_dir, origin_dir, project_id_list, sample_dir_prefix, fastqc_output_suffix)
 
-	# link to the necessary libraries for the HTML report
-	link_to_libraries(current_dir, parameters_dict.get('libraries'), date_stamped_delivery_dir, project_id_list)
+	# copy the necessary libraries for the HTML report
+	copy_libraries(current_dir, parameters_dict.get('libraries'), date_stamped_delivery_dir, project_id_list)
 
 	# create the HTML reports
 	write_reports(date_stamped_delivery_dir, parameters_dict, project_to_sample_map)	
