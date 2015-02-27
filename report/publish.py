@@ -2,6 +2,8 @@ import re
 import logging
 import os
 import sys
+import glob
+import shutil
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
 
@@ -15,7 +17,7 @@ def parse_config_file():
 	cfg_files = [f for f in os.listdir(current_dir) if f.endswith('cfg')]
 	if len(cfg_files) == 1:
 		parser = SafeConfigParser()
-		parser.readfp(cfg_files[0])
+		parser.read(cfg_files[0])
 		return parser.defaults()
 	else:
 		logging.error('There were %d config (*cfg) files found in %s.  Need exactly 1.  Correct this.' % (len(cfg_files), current_dir))
@@ -75,18 +77,102 @@ def correct_permissions(directory):
 
 
 def setup_links(date_stamped_delivery_dir, origin_dir, project_id_list, sample_dir_prefix, fastqc_output_suffix):
-
+	project_to_sample_mappings = {}
 	for project_id in project_id_list:
 		original_project_dir = os.path.join(origin_dir, project_id)
+		sample_names = [s.strip(sample_dir_prefix) for s in os.listdir(original_project_dir) if s.startswith(sample_dir_prefix)]
 		final_destination = os.path.join(date_stamped_delivery_dir, project_id)
 		fastq_files = glob.glob(os.path.join(original_project_dir, sample_dir_prefix + '*', '*.fastq.gz'))
 		fastqc_dirs = glob.glob(os.path.join(original_project_dir, sample_dir_prefix + '*', '*'+fastqc_output_suffix))
-		[os.symlink(fq, os.path.basename(fq)) for fq in fastq_files]
-		[os.symlink(qc_dir, os.path.basename(qc_dir)) for qc_dir in fastqc_dirs]
+		[os.symlink(fq, os.path.join(final_destination, os.path.basename(fq))) for fq in fastq_files]
+		[os.symlink(qc_dir, os.path.join(final_destination, os.path.basename(qc_dir))) for qc_dir in fastqc_dirs]
+		project_to_sample_mappings[project_id] = sample_names
+	return project_to_sample_mappings
 
+
+def extract_section(text, regex_pattern):
+	match = re.findall(regex_pattern, text, re.DOTALL)
+	if len(match) == 1:
+		return match[0]
+	else:
+		logging.error('Could not find the pattern %s in the text block.' % regex_pattern)
+		sys.exit(1)
+
+
+def fill_link_section(files, template, operation = lambda x: x):
+
+	final_text = ''
+	for f in files:
+		new_text = template
+		new_text = re.sub('#LINK#', f, new_text)
+		new_text = re.sub('#LINK_TEXT#', operation(f), new_text)
+		final_text += new_text
+	return final_text
+
+
+def replace_section(body_text, new_text, section_id):
+	regex_pattern = '<!--\s*'+str(section_id)+'.*'+str(section_id)+'\s*-->'
+	return re.sub(regex_pattern, new_text, body_text, flags = re.DOTALL)
+
+
+def write_reports(date_stamped_delivery_dir, parameters_dict, project_to_sample_mappings):
+	try:
+		html_template_string = open(parameters_dict.get('html_template')).read()
+	except IOError:
+		logging.error('Could not find the html template file: %s' % parameters_dict.get('html_template'))
+		sys.exit(1)
+
+	menu_section_template = extract_section(html_template_string, '<!-- \s*#SAMPLE_MENU#.*#SAMPLE_MENU#\s*-->')
+	file_link_template = extract_section(html_template_string, '<!-- \s*#FILE_LINK_SECTION#.*#FILE_LINK_SECTION#\s*-->')
+	fastqc_report_link_template = extract_section(html_template_string, '<!-- \s*#FASTQC_REPORT_LINK_SECTION#.*#FASTQC_REPORT_LINK_SECTION#\s*-->')
+
+	for project_id in project_to_sample_mappings.keys():
+		project_delivery_dir = os.path.join(date_stamped_delivery_dir, project_id)
+		# make a copy of the template for this project:
+		html_report = html_template_string
+
+		all_sample_sections = ''
+		for sample in project_to_sample_mappings[project_id]:
+			sample_section = menu_section_template #copy
+			sample_section = re.sub('#SAMPLE_ID#', sample, sample_section)
+
+			# get the files and their relative paths:
+			fastq_files = glob.glob(os.path.join(project_delivery_dir, str(sample) + '*.fastq.gz'))
+			fastq_files = [os.path.relpath(p, project_delivery_dir) for p in fastq_files]
+			fastqc_report_files = glob.glob(os.path.join(project_delivery_dir, str(sample)+ '*', parameters_dict.get('fastqc_html_report')))
+			fastqc_report_files = [os.path.relpath(p, project_delivery_dir) for p in fastqc_report_files]
+
+			fastq_links_html = fill_link_section(fastq_files, file_link_template)
+			fastqc_report_links_html = fill_link_section(fastqc_report_files, fastqc_report_link_template, lambda g: os.path.dirname(g).strip('_fastqc')+' FastQC')
+			
+			
+
+			sample_section = replace_section(sample_section, fastq_links_html, '#FILE_LINK_SECTION#')			
+			sample_section = replace_section(sample_section, fastqc_report_links_html, '#FASTQC_REPORT_LINK_SECTION#')			
+			all_sample_sections += sample_section
+
+
+		html_report = replace_section(html_report, all_sample_sections, '#SAMPLE_MENU#')
+
+		# write the html report into the delivery directory:
+		with open(os.path.join(project_delivery_dir, parameters_dict.get('output_html_report')), 'w') as outfile:
+			outfile.write(html_report)			
+		
+
+def link_to_libraries(report_directory, lib_dirname, date_stamped_delivery_dir, project_id_list):
+	"""
+	Creates a symlink to the css/js/etc libraries from within each project directory
+	'report_directory' refers to the directory of THIS file.  
+	"""
+	print 'linking!!!'
+	library_location = os.path.join(report_directory, lib_dirname)
+	final_project_dirs = [os.path.join(date_stamped_delivery_dir, d) for d in project_id_list]
+	[shutil.copytree(library_location, os.path.join(fpd, lib_dirname)) for fpd in final_project_dirs]
 
 def publish(origin_dir, project_id_list, sample_dir_prefix): 
 	
+	current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
+
 	# read the configuration parameters
 	parameters_dict = parse_config_file()
 
@@ -97,8 +183,12 @@ def publish(origin_dir, project_id_list, sample_dir_prefix):
 	date_stamped_delivery_dir = create_delivery_locations(delivery_home, project_id_list)
 
 	# link to the orignal files:
-	setup_links(date_stamped_delivery_dir, origin_dir, project_id_list, sample_dir_prefix, fastqc_output_suffix)
+	project_to_sample_map = setup_links(date_stamped_delivery_dir, origin_dir, project_id_list, sample_dir_prefix, fastqc_output_suffix)
 
-	# write_html	
+	# link to the necessary libraries for the HTML report
+	link_to_libraries(current_dir, parameters_dict.get('libraries'), date_stamped_delivery_dir, project_id_list)
 
+	# create the HTML reports
+	write_reports(date_stamped_delivery_dir, parameters_dict, project_to_sample_map)	
+	
 

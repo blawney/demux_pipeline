@@ -120,6 +120,7 @@ class TestFastQCCall(unittest.TestCase):
 	def test_fastqc_calls_are_correct(self, mock_os, mock_join, mock_check_call_method):
 
 		project_id_list = ['Project_A', 'Project_B']
+		# this mocks the generator returned by os.walk() method.
 		mock_os.walk.return_value = [('/path/to/target/dir', ['Project_A', 'Project_B'], []),
 						('/path/to/target/dir/Project_A', ['Sample_A2', 'Sample_A1'], []),
 						('/path/to/target/dir/Project_A/Sample_A2', [], ['A2_1.fastq.gz', 'A2_2.fastq.gz']),

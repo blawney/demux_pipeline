@@ -42,12 +42,35 @@
 			<div class="col-sm-2 sidebar">
 			<div class="panel-group" id="accordion" role="tablist" aria-multiselectable="true">
 				<!-- #SAMPLE_MENU# -->
+				<div class="panel panel-default">
+					<div class="panel-heading" role="tab" id="heading#SAMPLE_ID#">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#collapse#SAMPLE_ID#" aria-expanded="true" aria-controls="collapse#SAMPLE_ID#">
+								#SAMPLE_ID#
+							</a>
+						</h4>
+					</div>
+					<div id="collapse#SAMPLE_ID#" class="panel-collapse collapse " role="tabpanel" aria-labelledby="heading#SAMPLE_ID#">
+						<div class="panel-body">
+
+							<ul class="nav nav-sidebar">
+								<!-- #FILE_LINK_SECTION# -->
+								<li><a href="#LINK#">#LINK_TEXT#</a></li>
+								<!-- #FILE_LINK_SECTION# -->
+								<!-- #FASTQC_REPORT_LINK_SECTION# -->
+								<li><a href="#LINK#" target="main_iframe">#LINK_TEXT#</a></li>
+								<!-- #FASTQC_REPORT_LINK_SECTION# -->
+							</ul>
+
+						</div>
+					</div>
+				</div>
 				<!-- #SAMPLE_MENU# -->
 			</div>
 
 			</div>
 			<div class="col-sm-10 main-frame">				
-					<iframe src="landing.html" id="main_iframe" name="main_iframe" class="simple_iframe" marginwidth="0" marginheight="0" frameborder="0" vspace="0" hspace="0">
+					<iframe src="lib/landing.html" id="main_iframe" name="main_iframe" class="simple_iframe" marginwidth="0" marginheight="0" frameborder="0" vspace="0" hspace="0">
 					</iframe>
 				
 			</div>

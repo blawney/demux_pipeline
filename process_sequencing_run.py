@@ -20,7 +20,7 @@ def parse_config_file():
 	cfg_files = [f for f in os.listdir(current_dir) if f.endswith('cfg')]
 	if len(cfg_files) == 1:
 		parser = SafeConfigParser()
-		parser.readfp(cfg_files[0])
+		parser.read(cfg_files[0])
 		return parser.defaults()
 	else:
 		logging.error('There were %d config (*cfg) files found in %s.  Need exactly 1.  Correct this.' % (len(cfg_files), current_dir))
@@ -274,9 +274,9 @@ def correct_permissions(directory):
 	"""
 	for root, dirs, files in os.walk(directory):
 		for d in dirs:
-			os.chmod(os.path.join(root, d), 0774)
+			os.chmod(os.path.join(root, d), 0775)
 		for f in files:
-			os.chmod(os.path.join(root, f), 0774)
+			os.chmod(os.path.join(root, f), 0775)
 
 
 
