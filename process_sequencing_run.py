@@ -18,7 +18,7 @@ def parse_config_file():
 	"""
 
 	current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
-	cfg_files = [f for f in os.listdir(current_dir) if f.endswith('cfg')]
+	cfg_files = [os.path.join(current_dir, f) for f in os.listdir(current_dir) if f.endswith('cfg')]
 	if len(cfg_files) == 1:
 		logging.info('Parsing configuration file: %s' % cfg_files[0])
 		parser = SafeConfigParser()
