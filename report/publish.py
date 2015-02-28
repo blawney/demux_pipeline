@@ -7,14 +7,11 @@ import shutil
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
 
-
-def parse_config_file():
+def parse_config_file(current_dir):
 	"""
 	This function finds and parses a configuration file, which contains various constants 
 	"""
-
-	current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
-	cfg_files = [f for f in os.listdir(current_dir) if f.endswith('cfg')]
+	cfg_files = [os.path.join(current_dir,f) for f in os.listdir(current_dir) if f.endswith('cfg')]
 	if len(cfg_files) == 1:
 		parser = SafeConfigParser()
 		parser.read(cfg_files[0])
@@ -115,9 +112,9 @@ def replace_section(body_text, new_text, section_id):
 	return re.sub(regex_pattern, new_text, body_text, flags = re.DOTALL)
 
 
-def write_reports(date_stamped_delivery_dir, parameters_dict, project_to_sample_mappings):
+def write_reports(report_template_dir, date_stamped_delivery_dir, parameters_dict, project_to_sample_mappings):
 	try:
-		html_template_string = open(parameters_dict.get('html_template')).read()
+		html_template_string = open(os.path.join(report_template_dir, parameters_dict.get('html_template'))).read()
 	except IOError:
 		logging.error('Could not find the html template file: %s' % parameters_dict.get('html_template'))
 		sys.exit(1)
@@ -175,8 +172,7 @@ def publish(origin_dir, project_id_list, sample_dir_prefix):
 	current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
 
 	# read the configuration parameters
-	parameters_dict = parse_config_file()
-
+	parameters_dict = parse_config_file(current_dir)
 	delivery_home = parameters_dict.get('delivery_home')
 	fastqc_output_suffix = parameters_dict.get('fastqc_output_suffix')
 
@@ -190,6 +186,6 @@ def publish(origin_dir, project_id_list, sample_dir_prefix):
 	copy_libraries(current_dir, parameters_dict.get('libraries'), date_stamped_delivery_dir, project_id_list)
 
 	# create the HTML reports
-	write_reports(date_stamped_delivery_dir, parameters_dict, project_to_sample_map)	
+	write_reports(current_dir, date_stamped_delivery_dir, parameters_dict, project_to_sample_map)	
 	
 

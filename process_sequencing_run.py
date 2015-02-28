@@ -20,6 +20,7 @@ def parse_config_file():
 	current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
 	cfg_files = [f for f in os.listdir(current_dir) if f.endswith('cfg')]
 	if len(cfg_files) == 1:
+		logging.info('Parsing configuration file: %s' % cfg_files[0])
 		parser = SafeConfigParser()
 		parser.read(cfg_files[0])
 		return parser.defaults()
@@ -55,6 +56,7 @@ def create_output_directory(run_directory_path, bcl2fastq2_output_dirname):
 	if os.path.isdir(run_directory_path):
 		try:
 			output_directory_path = os.path.join(run_directory_path, bcl2fastq2_output_dirname)
+			logging.info('Creating output directory for demux process at %s' % output_directory_path)			
 			os.mkdir(output_directory_path)
 			correct_permissions(output_directory_path)
 			return output_directory_path
@@ -95,6 +97,7 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 	This method checks for a samplesheet and does a quick check that it is formatted within guidelines (described elsewhere)
 	"""
 	samplesheet_path = os.path.join(run_dir_path, 'SampleSheet.csv')
+	logging.info('Examining samplesheet at: %s' % samplesheet_path)
 
 	if os.path.isfile(samplesheet_path):
 		# the following regex extracts the sample annotation section, which is started by '[Data]'
@@ -121,7 +124,9 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 			sys.exit(1)
 
 		# now get a list of all the projects that we are processing in this sampling run:
-		project_id_list = [line.split(',')[6] for line in annotation_lines]
+		project_id_list = list(set([line.split(',')[6] for line in annotation_lines]))
+
+		logging.info('The following projects were identified from the SampleSheet.csv: %s' % project_id_list)
 		return project_id_list
 	else:
 		logging.error('Could not locate a SampleSheet.csv file in %s ' % run_dir_path)
@@ -133,7 +138,7 @@ def run_demux(bcl2fastq2_path, run_dir_path, output_dir_path):
 	This starts off the demux process.  Catches any errors in the process via the system exit code
 	"""
 	try:
-		call_command = bcl2fastq2_path + '--output-dir' + output_dir_path + '--runfolder-dir' + run_dir_path
+		call_command = bcl2fastq2_path + ' --output-dir ' + output_dir_path + ' --runfolder-dir ' + run_dir_path
 		subprocess.check_call(call_command, shell = True)
 	except subprocess.CalledProcessError:
 		logging.error('The demux process had non-zero exit status.  Check the log.')
@@ -216,9 +221,11 @@ def create_project_structure(target_dir, bcl2fastq2_outdir, project_id, sample_d
 	new_project_dir = os.path.join(target_dir, project_id)
 	try:
 		os.mkdir(new_project_dir)
+		logging.info('Created directory for project %s at %s' % (project_id, new_project_dir))
 		for sample_dir in sample_dirs:
 			sample_dir = os.path.join(new_project_dir, sample_dir)
 			os.mkdir(sample_dir)
+			logging.info('Created sample directory at %s' % sample_dir)
 		# change the permissions for everything underneath this new directory (including the sample-specific directories)
 		correct_permissions(new_project_dir)
 	except OSError as ex:
@@ -250,12 +257,15 @@ def create_final_locations(bcl2fastq2_outdir, projects_dir, project_id_list, sam
                 # Any other errors encountered in creating the directory will cause pipeline to exit
                 try:
                     	os.makedirs(target_dir)
+			logging.info('Creating final directory for the projects at: %s' % target_dir)
 			correct_permissions(target_dir)
                 except OSError as ex:
                         if ex.errno != 17: # 17 indicates that the directory was already there.
                                 logging.error('Exception occured:')
                                 logging.error(ex.strerror)
                                 sys.exit(1)
+			else:
+				logging.info('The final (date-stamped) directory at %s already existed.' % target_dir)
                 # check that we do have a destination directory to go to.
                 if os.path.isdir(target_dir):
                         for project_id in project_id_list:
@@ -303,6 +313,9 @@ def run_fastqc(fastqc_path, target_directory, project_id_list):
 
 def process():
 
+	# kickoff the processing:
+	run_directory_path = parse_commandline_args()
+
 	# setup a logger that prints to stdout:
 	root = logging.getLogger()
 	root.setLevel(logging.INFO)
@@ -316,12 +329,11 @@ def process():
 	config_params_dict = parse_config_file()
 	bcl2fastq2_path = config_params_dict.get('bcl2fastq2_path')
 	bcl2fastq2_output_dir = config_params_dict.get('bcl2fastq2_output_dir')
-	sample_dir_prefix = config_params_dict('sample_dir_prefix')
+	sample_dir_prefix = config_params_dict.get('sample_dir_prefix')
 	final_destination_path = config_params_dict.get('destination_path')
 	fastqc_path = config_params_dict.get('fastqc_path')
 
-	# kickoff the processing:
-	run_directory_path = parse_commandline_args()
+	logging.info('Parameters parsed from configuration file: %s' % config_params_dict)
 
 	# create the location where the demux process will drop the fastq files:
 	output_directory_path = create_output_directory(run_directory_path, bcl2fastq2_output_dir)
@@ -330,7 +342,7 @@ def process():
 	project_id_list = check_samplesheet(run_directory_path, sample_dir_prefix)
 
 	# actually start the demux process:
-	run_demux(bcl2fastq2_path, run_diretory_path, output_directory_path)
+	run_demux(bcl2fastq2_path, run_directory_path, output_directory_path)
 
 	# sets up the directory structure for the final, merged fastq files.
 	target_directory = create_final_locations(output_directory_path, final_destination_path, project_id_list, sample_dir_prefix)
@@ -341,7 +353,7 @@ def process():
 	# run the fastQC process:
 	run_fastqc(fastqc_path, target_directory, project_id_list)
 
-	publish(target_dir, project_id_list, sample_dir_prefix)	
+	publish(target_directory, project_id_list, sample_dir_prefix)	
 
 
 
