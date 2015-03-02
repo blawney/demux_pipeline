@@ -42,8 +42,14 @@ def parse_commandline_args():
 				required = True,
 				help = 'The full path to the run directory',
 				dest = 'run_directory')	
+	parser.add_argument('-e', 
+				'--email', 
+				required = False,
+				help = 'Comma-separated list of email addresses for notifications (no spaces between entries)',
+				dest = 'recipients')
 
-	return parser.parse_args().run_directory
+	args = parser.parse_args()
+	return (args.run_directory, args.recipients)
 
 
 
@@ -72,22 +78,23 @@ def create_output_directory(run_directory_path, bcl2fastq2_output_dirname):
 def line_is_valid(line, sample_dir_prefix):
 	"""
 	Receives a sample annotation line from the Illumina-generated SampleSheet.csv and does some quick checks to see
-	that the Samplesheet.csv has the correct formatting for our pipelines
+	that the Samplesheet.csv has the correct formatting for our pipelines.
+	Returns a boolean: True is all the fields are within guidelines, otherwise False
 	"""
 	elements = line.split(',')
 
-	# ensure the sample name only has letters, numbers, and underscores with a greedy regex.  No other characters allowed.
-	match = re.match('[a-z0-9_]+', elements[1], re.IGNORECASE)
+	# establish a greedy regex for only letters, numbers, and underscores.  No other characters allowed.
+	pattern = re.compile('[a-z0-9_]+', re.IGNORECASE)
 
-	# if the greedy regex did not match the sample name, then something is wrong.  Only proceed if the name is valid 
-	if match and match.group() == elements[1]:
+	try:
 		tests = []
+		tests.append(pattern.match(elements[1]).group() == elements[1]) # if the greedy regex did not match the sample name, then something is wrong.
 		tests.append(elements[0].startswith(sample_dir_prefix)) # check that the Sample_ID field has the proper prefix
 		tests.append(elements[0].strip(sample_dir_prefix) == elements[1]) # check that the sample names match between the first and second fields
 		tests.append(len(elements[5]) == 7) # check that 7bp index was provided
-		tests.append(len(elements[6])>0) # check that there is an entry in the Sample_Project field.  Important for splitting FASTQs between projects
+		tests.append(pattern.match(elements[6]).group() == elements[6]) # if the greedy regex did not match the full project designation then something is wrong.
 		return all(tests)
-	else:
+	except Exception:
 		return False
 
 
@@ -95,6 +102,7 @@ def line_is_valid(line, sample_dir_prefix):
 def check_samplesheet(run_dir_path, sample_dir_prefix):
 	"""
 	This method checks for a samplesheet and does a quick check that it is formatted within guidelines (described elsewhere)
+	Returns a list of the Project identifiers.
 	"""
 	samplesheet_path = os.path.join(run_dir_path, 'SampleSheet.csv')
 	logging.info('Examining samplesheet at: %s' % samplesheet_path)
@@ -116,7 +124,7 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 
 		# a list of True/False on whether the sample annotation line is valid
 		lines_valid = [line_is_valid(line, sample_dir_prefix) for line in annotation_lines]
-		
+		print lines_valid
 		if not all(lines_valid):
 			problem_lines = [i+1 for i,k in enumerate(lines_valid) if k == False]
 			logging.error('There was some problem with the SampleSheet.csv')
@@ -133,6 +141,7 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 		sys.exit(1)
 
 
+
 def run_demux(bcl2fastq2_path, run_dir_path, output_dir_path):
 	"""
 	This starts off the demux process.  Catches any errors in the process via the system exit code
@@ -145,6 +154,7 @@ def run_demux(bcl2fastq2_path, run_dir_path, output_dir_path):
 		sys.exit(1)
 
 
+
 def concatenate_fastq_files(output_directory_path, target_directory_path, project_id_list, sample_dir_prefix):
 	"""
 	This method scans the output and concatenates the fastq files for each sample and read number.
@@ -153,7 +163,9 @@ def concatenate_fastq_files(output_directory_path, target_directory_path, projec
 	to do this for both the R1 and R2 reads.
 
 	'target_directory_path' is a time-stamped subdirectory of the more general output projects directory
-	This is where the empty directories were already setup
+	This is where the empty directories were already setup.
+
+	'output_directory_path' is the full path to the output directory from the demux process.
 	"""
 
 	for project_id in project_id_list:
@@ -210,9 +222,10 @@ def concatenate_fastq_files(output_directory_path, target_directory_path, projec
 					sys.exit(1)
 					
 
+
 def create_project_structure(target_dir, bcl2fastq2_outdir, project_id, sample_dir_prefix):
 	"""
-	This creates the project and sample subdirectories within the target_dir.
+	This creates the project and sample subdirectories within the target_dir (which is time-stamped by year+month).
 	Extracted out from another method for easier unit testing
 	"""
 	orig_project_dir_path = os.path.join(bcl2fastq2_outdir, project_id)
@@ -292,6 +305,9 @@ def correct_permissions(directory):
 
 
 def run_fastqc(fastqc_path, target_directory, project_id_list):
+	"""
+	Finds all the fastq files in 'target_directory' and runs them through fastQC with a system call
+	"""
 	for project_id in project_id_list:
 		project_dir = os.path.join(target_directory, project_id)
 		fastq_files = []
@@ -309,12 +325,60 @@ def run_fastqc(fastqc_path, target_directory, project_id_list):
 				sys.exit(1)
 
 
+def write_html_links(delivery_links, external_url, internal_drop_location):
+	"""
+	A helper method for writing an email-- composes html links
+	delivery_links is a dict mapping the project_id to the data location
+	"""
+	template = 'Project #PROJECT#: <a href="#LINK#">#LINK#</a>\n'
+	text = ''
+	for project in delivery_links.keys():
+		final_link = re.sub(internal_drop_location, external_url, delivery_links[project])
+		this_text = re.sub('#LINK#', final_link, template)
+		this_text = re.sub('#PROJECT#', project, this_text)
+		text += this_text
+	return text
+	
+
+
+def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server_port, external_url, internal_drop_location):
+	"""
+	Sends an email with the data links to addresses in the 'recipients' arg.
+	Note that the recipients arg is a comma-separated string parsed from the commandline
+	"""
+
+	# first, compose the message:
+	body_text = 'The following projects have completed processing and are available at the following URLs:\n'
+	body_text += write_html_links(delivery_links, external_url, internal_drop_location)
+
+	import smtplib
+	from email.mime.multipart import MIMEMultipart
+	from email.mime.text import MIMEText
+
+	# need a list of the email addresses:
+	address_list = recipients.split(',')
+	address_to_string = ', '.join(address_list)
+
+	fromaddr = 'nextseq@nextseq'
+
+	msg = MIMEMultipart('alternative')
+	msg['Subject'] = 'NextSeq Data processing complete'
+	msg['From'] = fromaddr
+	msg['To'] = address_to_string
+
+	msg.attach(MIMEText(body_text, 'html'))
+
+	server = smtplib.SMTP(smtp_server_name, smtp_server_port)
+
+	server.sendmail(fromaddr, address_list, msg.as_string())
+
+
 
 
 def process():
 
 	# kickoff the processing:
-	run_directory_path = parse_commandline_args()
+	run_directory_path, recipients = parse_commandline_args()
 
 	# setup a logger that prints to stdout:
 	root = logging.getLogger()
@@ -332,6 +396,8 @@ def process():
 	sample_dir_prefix = config_params_dict.get('sample_dir_prefix')
 	final_destination_path = config_params_dict.get('destination_path')
 	fastqc_path = config_params_dict.get('fastqc_path')
+	smtp_server_name = config_params_dict.get('smtp_server')
+	smtp_server_port = int(config_params_dict.get('smtp_port'))
 
 	logging.info('Parameters parsed from configuration file: %s' % config_params_dict)
 
@@ -353,9 +419,12 @@ def process():
 	# run the fastQC process:
 	run_fastqc(fastqc_path, target_directory, project_id_list)
 
-	publish(target_directory, project_id_list, sample_dir_prefix)	
+	# write the HTML output and create the delivery:
+	delivery_links = publish(target_directory, project_id_list, sample_dir_prefix)	
 
-
+	# send email to indicate processing is complete:
+	if recipients:
+		send_notifications(recipients, delivery_links, smtp_server_name, smtp_server_port, external_url, internal_drop_location):
 
 if __name__ == '__main__':
 	process()

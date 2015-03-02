@@ -63,8 +63,10 @@ class SampleSheetTests(unittest.TestCase):
 		dummy_text += 'Sample_XX,XX,,,A001,ATCACGA,Project_X,\n'
 		dummy_text += 'Sample_YY,YY,,,A001,ATCACGA,Project_Y,\n'
 		dummy_text += 'Sample_ZZ,ZZ,,,A001,ATCACGA,Project_Z,\n'
-		with mock.patch('__builtin__.open', mock.mock_open(read_data = dummy_text)) as mo: 
-			self.assertEqual(check_samplesheet('dummy1', 'Sample_'), ['Project_X','Project_Y','Project_Z'])
+		with mock.patch('__builtin__.open', mock.mock_open(read_data = dummy_text)) as mo:
+			found_projects = set(check_samplesheet('dummy1', 'Sample_'))
+			expected_projects = set(['Project_X','Project_Y','Project_Z'])
+			self.assertEqual(found_projects, expected_projects)
 
 
 class ConfigParserTest(unittest.TestCase):
