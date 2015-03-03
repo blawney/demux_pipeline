@@ -475,16 +475,15 @@ class TestEmailNotifications(unittest.TestCase):
 		self.assertTrue(match[0] == expected_url )
 
 	"""
-	@mock.patch('process_sequencing_run.smtplib')
-	def test_creates_correct_url_for_email(self, mock_smtplib):
+	# this actually sends an email to the recipients-- only used for verification since it's not quite a unit test.	
+	def test_creates_correct_url_for_email(self):
 		delivery_links = {'Project_XX':'/cccbstore-rc/projects/cccb/outgoing/frd/2015/2/Project_XX/delivery_home.html',
 				'Project_YY': '/cccbstore-rc/projects/cccb/outgoing/frd/2015/2/Project_YY/delivery_home.html'}
 		external_url = 'https://cccb-download.dfci.harvard.edu/frd/'
 		internal_drop_location = '/cccbstore-rc/projects/cccb/outgoing/frd/'
-		recipients='abc@domain.org,def@domain.org'
-		send_notifications(recipients, delivery_links, 'dummy', 25, external_url, internal_drop_location)
+		recipients='dummy@domain.org'
+		send_notifications(recipients, delivery_links, 'servername', 25, external_url, internal_drop_location)
 	"""
-
 
 
 
