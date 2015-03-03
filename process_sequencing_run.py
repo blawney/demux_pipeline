@@ -10,6 +10,9 @@ import glob
 from report.publish import publish
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 
 def parse_config_file():
@@ -124,7 +127,6 @@ def check_samplesheet(run_dir_path, sample_dir_prefix):
 
 		# a list of True/False on whether the sample annotation line is valid
 		lines_valid = [line_is_valid(line, sample_dir_prefix) for line in annotation_lines]
-		print lines_valid
 		if not all(lines_valid):
 			problem_lines = [i+1 for i,k in enumerate(lines_valid) if k == False]
 			logging.error('There was some problem with the SampleSheet.csv')
@@ -325,12 +327,13 @@ def run_fastqc(fastqc_path, target_directory, project_id_list):
 				sys.exit(1)
 
 
+
 def write_html_links(delivery_links, external_url, internal_drop_location):
 	"""
 	A helper method for writing an email-- composes html links
 	delivery_links is a dict mapping the project_id to the data location
 	"""
-	template = 'Project #PROJECT#: <a href="#LINK#">#LINK#</a>\n'
+	template = '<p> #PROJECT#: <a href="#LINK#">#LINK#</a></p>'
 	text = ''
 	for project in delivery_links.keys():
 		final_link = re.sub(internal_drop_location, external_url, delivery_links[project])
@@ -348,30 +351,29 @@ def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server
 	"""
 
 	# first, compose the message:
-	body_text = 'The following projects have completed processing and are available at the following URLs:\n'
+	body_text = '<html><head></head><body><p>The following projects have completed processing and are available:</p>'
 	body_text += write_html_links(delivery_links, external_url, internal_drop_location)
-
-	import smtplib
-	from email.mime.multipart import MIMEMultipart
-	from email.mime.text import MIMEText
+	body_text += '</body></html>'
 
 	# need a list of the email addresses:
-	address_list = recipients.split(',')
-	address_to_string = ', '.join(address_list)
+	address_list = recipients.split(',') # this is the ACTUAL list of emails to send to
+	address_to_string = ', '.join(address_list) # this is just for the mail header
 
+	# this address gets .harvard.edu appended to it.  Doesn't really matter what this is
 	fromaddr = 'nextseq@nextseq'
 
 	msg = MIMEMultipart('alternative')
-	msg['Subject'] = 'NextSeq Data processing complete'
+	msg['Subject'] = '[NextSeq] Data processing complete'
 	msg['From'] = fromaddr
 	msg['To'] = address_to_string
 
 	msg.attach(MIMEText(body_text, 'html'))
-
-	server = smtplib.SMTP(smtp_server_name, smtp_server_port)
-
-	server.sendmail(fromaddr, address_list, msg.as_string())
-
+	try:
+		server = smtplib.SMTP(smtp_server_name, smtp_server_port)
+		server.sendmail(fromaddr, address_list, msg.as_string())
+	except Exception:
+		logging.error('There was an error composing the email to the recipients.')
+		sys.exit(1)
 
 
 
@@ -398,6 +400,8 @@ def process():
 	fastqc_path = config_params_dict.get('fastqc_path')
 	smtp_server_name = config_params_dict.get('smtp_server')
 	smtp_server_port = int(config_params_dict.get('smtp_port'))
+	delivery_home = config_params_dict.get('delivery_home')
+	external_url = config_params_dict.get('external_url')
 
 	logging.info('Parameters parsed from configuration file: %s' % config_params_dict)
 
@@ -420,11 +424,13 @@ def process():
 	run_fastqc(fastqc_path, target_directory, project_id_list)
 
 	# write the HTML output and create the delivery:
-	delivery_links = publish(target_directory, project_id_list, sample_dir_prefix)	
+	delivery_links = publish(target_directory, project_id_list, sample_dir_prefix, delivery_home)	
 
 	# send email to indicate processing is complete:
 	if recipients:
-		send_notifications(recipients, delivery_links, smtp_server_name, smtp_server_port, external_url, internal_drop_location):
+		send_notifications(recipients, delivery_links, smtp_server_name, smtp_server_port, external_url, delivery_home)
+
+
 
 if __name__ == '__main__':
 	process()

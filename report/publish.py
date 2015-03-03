@@ -231,13 +231,12 @@ def copy_libraries(report_directory, lib_dirname, date_stamped_delivery_dir, pro
 
 
 
-def publish(origin_dir, project_id_list, sample_dir_prefix): 
+def publish(origin_dir, project_id_list, sample_dir_prefix, delivery_home): 
 	
 	current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
 
 	# read the configuration parameters
 	parameters_dict = parse_config_file(current_dir)
-	delivery_home = parameters_dict.get('delivery_home')
 	fastqc_output_suffix = parameters_dict.get('fastqc_output_suffix')
 
 	# create the output directory (with the year + month).  Project dirs will be located underneath

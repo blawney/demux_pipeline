@@ -461,5 +461,35 @@ class TestCreatingFinalLocations(unittest.TestCase):
 		mock_called_method.assert_has_calls(mock_calls)
 
 
+
+class TestEmailNotifications(unittest.TestCase):
+
+	def test_creates_correct_url_for_email(self):
+		import re
+		delivery_links = {'Project_XX':'/cccbstore-rc/projects/cccb/outgoing/frd/2015/2/Project_XX/delivery_home.html'}
+		external_url = 'https://cccb-download.dfci.harvard.edu/frd/'
+		internal_drop_location = '/cccbstore-rc/projects/cccb/outgoing/frd/'
+		s = write_html_links(delivery_links, external_url, internal_drop_location)
+		expected_url = r'https://cccb-download.dfci.harvard.edu/frd/2015/2/Project_XX/delivery_home.html'
+		match = re.findall(expected_url, s, re.DOTALL)
+		self.assertTrue(match[0] == expected_url )
+
+	"""
+	@mock.patch('process_sequencing_run.smtplib')
+	def test_creates_correct_url_for_email(self, mock_smtplib):
+		delivery_links = {'Project_XX':'/cccbstore-rc/projects/cccb/outgoing/frd/2015/2/Project_XX/delivery_home.html',
+				'Project_YY': '/cccbstore-rc/projects/cccb/outgoing/frd/2015/2/Project_YY/delivery_home.html'}
+		external_url = 'https://cccb-download.dfci.harvard.edu/frd/'
+		internal_drop_location = '/cccbstore-rc/projects/cccb/outgoing/frd/'
+		recipients='abc@domain.org,def@domain.org'
+		send_notifications(recipients, delivery_links, 'dummy', 25, external_url, internal_drop_location)
+	"""
+
+
+
+
+
+
+
 if __name__ == '__main__':
 	unittest.main()
