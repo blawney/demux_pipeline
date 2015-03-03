@@ -1,1 +1,31 @@
 This directory contains files, scripts, etc. related to processing NextSeq-generated sequencing data.
+
+The main script to launch the pipeline is process_sequencing_run.py
+
+To view the current list of input args and explanations, type '-h' as the first argument to the script.
+A printout will give the required and optional input args.
+
+As of March 3, 2015:
+ 
+usage: process_sequencing_run.py [-h] -r RUN_DIRECTORY [-e RECIPIENTS]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -r RUN_DIRECTORY, --rundir RUN_DIRECTORY
+                        The full path to the run directory
+  -e RECIPIENTS, --email RECIPIENTS
+                        Comma-separated list of email addresses for
+                        notifications (no spaces between entries)
+
+
+The '-r' arg is followed by the full path to the sequencing output directory created by the instrument:
+e.g.
+/ifs/labs/cccb/projects/cccb/instruments/NS500749/150211_NS500749_0002_AH5GMMBGXX
+
+The '-e' arg is followed by a comma-separated list of email addresses that will be notified when the run is complete
+(including the external data delivery links). No spaces between the entries, as shown below:
+e.g.
+abc@jimmy.harvard.edu,def@jimmy.harvard.edu
+
+Additional notes:
+The script (and subprocesses that are launched) will send logging to stdout, so this should be captured in a nohup.out log or similar redirection.
