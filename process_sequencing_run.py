@@ -26,6 +26,11 @@ def process():
 	ch.setFormatter(formatter)
 	root.addHandler(ch)
 
+	# before starting anything- check that the cmdline arg was valid:
+	if not os.path.isdir(run_directory_path):
+		logging.error('The path to the run directory (%s) was not valid.' % run_directory_path)
+		sys.exit(1)
+
 	if instrument == 'nextseq':
 		pipeline = pipeline.NextSeqPipeline(run_directory_path)
 	elif instrument == 'hiseq':

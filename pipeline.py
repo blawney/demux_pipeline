@@ -5,6 +5,7 @@ import glob
 import logging
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
+import subprocess
 
 
 def correct_permissions(directory):
@@ -69,14 +70,15 @@ class Pipeline(object):
 			sys.exit(1)
 
 
-	def run_demux(self, call_command):
+	def execute_call(self, call_command):
 		"""
-		This starts off the demux process.  Catches any errors in the process via the system exit code
+		This executes the call passed via the call_command the argument.  Catches any errors in the process via the system exit code
 		"""
 		try:
+			logging.info('Executing the following call to the shell:\n %s ' % call_command)
 			subprocess.check_call(call_command, shell = True)
 		except subprocess.CalledProcessError:
-			logging.error('The demux process had non-zero exit status.  Check the log.')
+			logging.error('The called process had non-zero exit status.  Check the log.')
 			sys.exit(1)
 
 
@@ -205,7 +207,7 @@ class NextSeqPipeline(Pipeline):
 		This writes the call for the demux process.  Uses the parent to execute the actual process.
 		"""
 			call_command = self.demux_path + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --runfolder-dir ' + self.run_directory_path
-			Pipeline.run_demux(self, call_command)
+			Pipeline.execute_call(self, call_command)
 
 
 	def line_is_valid(self, line):
@@ -369,12 +371,39 @@ class HiSeqPipeline(Pipeline):
 
 	def check_samplesheet(self):
 		pass
+		# TODO: need to get a list of project IDs here and set to self.project_id_list
+
 
 	def run_demux(self):
-		pass
+		"""
+		This writes the call for the demux process.  Uses the parent object to execute the actual process.
+		"""
+			# the run directory was passed via commandline.  Append the default path to the BaseCalls directory:
+			input_dir = os.path.join(self.run_directory_path, self.config_params_dict['basecalls_dir_rel_path'])
+			if os.path.isdir(input_dir):
+
+				# execute the perl script to set everything up:
+				call_command = self.demux_path + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --input-dir ' + input_dir + ' --mismatches 1 '
+				Pipeline.execute_call(self, call_command)
+				
+				try:
+					i = int(self.config_params_dict['demux_jobs'])
+				except ValueError:
+					logging.info('The value for "demux_jobs" given in the configuration file needs to be an integer.  Ignoring and setting "-j 8" by default.')
+					self.config_params_dict['demux_jobs'] = '8' # an integer given as a string (since it will be concatenated to a string object below).
+
+				# create the make command for starting the actual demux.  Pass the -C flag so we do not have to change directories, etc.  
+				call_command = 'make -C ' + self.config_params_dict['demux_output_dir'] + ' -j ' + self.config_params_dict['demux_jobs']
+				Pipeline.execute_call(self, call_command)
+
+			else:
+				logging.error('The HiSeq run output is non-standard-- the BaseCalls directory was supposed to be located at: %s' % input_dir)
+				sys.exit(1)
+
 
 	def move_fastq_files(self):
 		pass
+		# TODO: Using self.config_params_dict['demux_output_dir'], self.config_params_dict['target_dir'], and the project_id list, mv the fastq files and (maybe?) samplesheets
 
 
 
