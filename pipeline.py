@@ -113,35 +113,62 @@ class Pipeline(object):
 		"""	
 
 		# for organizing projects by date:
-		    today = date.today()
-		    year = today.year
-		    month = today.month
+		today = date.today()
+		year = today.year
+		month = today.month
 
-		    # double-check that the config file had a valid path to a directory
-		    if os.path.isdir(self.config_params_dict.get('destination_path')):
-		            target_dir = os.path.join(self.config_params_dict.get('destination_path'), str(year), str(month))
+		# double-check that the config file had a valid path to a directory
+		if os.path.isdir(self.config_params_dict.get('destination_path')):
+			target_dir = os.path.join(self.config_params_dict.get('destination_path'), str(year), str(month))
 
-		            # try to create the directory-- it may already exist, in which case we catch the exception and move on.
-		            # Any other errors encountered in creating the directory will cause pipeline to exit
-		            try:
-		                	os.makedirs(target_dir)
-							logging.info('Creating final directory for the projects at: %s' % target_dir)
-							correct_permissions(target_dir)
-		            except OSError as ex:
-		                    if ex.errno != 17: # 17 indicates that the directory was already there.
-		                            logging.error('Exception occured:')
-		                            logging.error(ex.strerror)
-		                            sys.exit(1)
-							else:
-								logging.info('The final (date-stamped) directory at %s already existed.' % target_dir)
-		            # check that we do have a destination directory to go to.
-		            if os.path.isdir(target_dir):
-						self.target_dir = target_dir
-						for project_id in project_id_list:
-							create_project_structure(self, project_id)
-		            else:
-		            	logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
-						sys.exit(1)
+			# try to create the directory-- it may already exist, in which case we catch the exception and move on.
+			# Any other errors encountered in creating the directory will cause pipeline to exit
+			try:
+				os.makedirs(target_dir)
+				logging.info('Creating final directory for the projects at: %s' % target_dir)
+				correct_permissions(target_dir)
+			except OSError as ex:
+				if ex.errno != 17: # 17 indicates that the directory was already there.
+					logging.error('Exception occured:')
+					logging.error(ex.strerror)
+					sys.exit(1)
+				else:
+					logging.info('The final (date-stamped) directory at %s already existed.' % target_dir)
+			# check that we do have a destination directory to go to.
+			if os.path.isdir(target_dir):
+				self.target_dir = target_dir
+				for project_id in project_id_list:
+					create_project_structure(self, project_id)
+			else:
+				logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
+				sys.exit(1)
+		else:
+			logging.error('The path supplied as the final destination base directory is not, in fact, a directory')
+			sys.exit(1)
+
+
+
+	def run_fastqc(self):
+		"""
+		Finds all the fastq files in 'target_directory' and runs them through fastQC with a system call
+		"""
+		for project_id in self.project_id_list:
+			project_dir = os.path.join(self.target_dir, project_id)
+			fastq_files = []
+			for root, dirs, files in os.walk(project_dir):
+				for f in files:
+					if f.lower().endswith('fastq.gz'):
+						fastq_files.append(os.path.join(root, f))
+
+			for fq in fastq_files:
+				try:
+					call_command = fastqc_path + ' ' + fq
+					subprocess.check_call(call_command, shell = True)
+				except subprocess.CalledProcessError:
+					logging.error('The fastqc process on fastq file (%s) had non-zero exit status.  Check the log.' % fq)
+					sys.exit(1)
+
+
 
 
 
@@ -166,24 +193,12 @@ class NextSeqPipeline(Pipeline):
 		# sets up the directory structure for the final, merged fastq files.
 		Pipeline.create_final_locations(self)
 
+		# the NextSeq has each sample in multiple lanes- concat those
 		self.concatenate_fastq_files()
+	
+		# run the fastQC process:
+		Pipeline.run_fastqc(self)
 
-	"""
-
-	# concatenate the fastq.gz files and place them in the final destination (NOT in the instrument directory)
-	concatenate_fastq_files(output_directory_path, target_directory, project_id_list, sample_dir_prefix)
-
-	# run the fastQC process:
-	run_fastqc(fastqc_path, target_directory, project_id_list)
-
-	# write the HTML output and create the delivery:
-	delivery_links = publish(target_directory, project_id_list, sample_dir_prefix, delivery_home)	
-
-	# send email to indicate processing is complete:
-	if recipients:
-		send_notifications(recipients, delivery_links, smtp_server_name, smtp_server_port, external_url, delivery_home)
-
-	"""
 
 	def run_demux(self):
 		"""
@@ -259,17 +274,12 @@ class NextSeqPipeline(Pipeline):
 
 
 
-	def concatenate_fastq_files(self):#, output_directory_path, target_directory_path, project_id_list, sample_dir_prefix):
+	def concatenate_fastq_files(self):
 		"""
 		This method scans the output and concatenates the fastq files for each sample and read number.
 		That is, the NextSeq output (in general) has a fastq file for each lane and sample and we need to 
 		concatenate the lane files into a single fastq file for that sample.  For paired-end protocol, need
 		to do this for both the R1 and R2 reads.
-
-		'target_directory_path' is a time-stamped subdirectory of the more general output projects directory
-		This is where the empty directories were already setup.
-
-		'output_directory_path' is the full path to the output directory from the demux process.
 		"""
 
 		for project_id in self.project_id_list:
@@ -286,7 +296,7 @@ class NextSeqPipeline(Pipeline):
 			for sample_dir in sample_dirs:
 				# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 				sample_name_with_prefix = os.path.basename(sample_dir)
-				sample_name = sample_name_with_prefix.strip(sample_dir_prefix)
+				sample_name = sample_name_with_prefix.strip(self.config_params_dict.get('sample_dir_prefix'))
 
 				# get all the fastq files as lists.  Note the sort so they are concatenated in the same order for paired-end protocol
 				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R1_001.fastq.gz')))			
@@ -302,8 +312,8 @@ class NextSeqPipeline(Pipeline):
 				merged_read_2_fastq = sample_name + '_R2_001.fastq.gz'
 
 				# construct full paths to the final files:
-				merged_read_1_fastq = os.path.join(self.target_directory, project_id, sample_name_with_prefix, merged_read_1_fastq)
-				merged_read_2_fastq = os.path.join(self.target_directory, project_id, sample_name_with_prefix, merged_read_2_fastq)
+				merged_read_1_fastq = os.path.join(self.target_dir, project_id, sample_name_with_prefix, merged_read_1_fastq)
+				merged_read_2_fastq = os.path.join(self.target_dir, project_id, sample_name_with_prefix, merged_read_2_fastq)
 
 				# an inline method to compose the concatenation command:
 				write_call = lambda infiles,outfile: 'cat '+ ' '.join(infiles) + ' >' + outfile
@@ -330,10 +340,50 @@ class NextSeqPipeline(Pipeline):
 
 
 
-
-
-
-
-
 class HiSeqPipeline(Pipeline):
-	pass
+
+	def __init__(self, run_directory_path):
+		self.run_directory_path = run_directory_path
+		self.instrument = 'hiseq'
+
+	def run(self):
+		Pipeline.parse_config_file(self)
+		Pipeline.create_output_directory(self)
+
+		# parse out the projects and also do a check on the SampleSheet.csv to ensure the correct parameters have been entered
+		self.check_samplesheet()
+
+		# actually start the demux process:
+		self.run_demux()
+	
+		# sets up the directory structure for the final, merged fastq files.
+		Pipeline.create_final_locations(self)
+
+		# the NextSeq has each sample in multiple lanes- concat those
+		self.move_fastq_files()
+	
+		# run the fastQC process:
+		Pipeline.run_fastqc(self)
+
+
+
+	def check_samplesheet(self):
+		pass
+
+	def run_demux(self):
+		pass
+
+	def move_fastq_files(self):
+		pass
+
+
+
+
+
+
+
+
+
+
+
+
