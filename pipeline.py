@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import glob
+import shutil
 import logging
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
@@ -139,7 +140,7 @@ class Pipeline(object):
 			# check that we do have a destination directory to go to.
 			if os.path.isdir(target_dir):
 				self.target_dir = target_dir
-				for project_id in project_id_list:
+				for project_id in self.project_id_list:
 					create_project_structure(self, project_id)
 			else:
 				logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
@@ -226,7 +227,7 @@ class NextSeqPipeline(Pipeline):
 			tests.append(pattern.match(elements[1]).group() == elements[1]) # if the greedy regex did not match the sample name, then something is wrong.
 			tests.append(elements[0].startswith(self.config_params_dict.get('sample_dir_prefix'))) # check that the Sample_ID field has the proper prefix
 			tests.append(elements[0].strip(self.config_params_dict.get('sample_dir_prefix')) == elements[1]) # check that the sample names match between the first and second fields
-			tests.append(len(elements[5]) == 7) # check that 7bp index was provided
+			# tests.append(len(elements[5]) == 7) # check that 7bp index was provided
 			tests.append(pattern.match(elements[6]).group() == elements[6]) # if the greedy regex did not match the full project designation then something is wrong.
 			return all(tests)
 		except Exception:
@@ -340,8 +341,6 @@ class NextSeqPipeline(Pipeline):
 
 
 
-
-
 class HiSeqPipeline(Pipeline):
 
 	def __init__(self, run_directory_path):
@@ -358,11 +357,11 @@ class HiSeqPipeline(Pipeline):
 		# actually start the demux process:
 		self.run_demux()
 	
-		# sets up the directory structure for the final, merged fastq files.
+		# sets up the directory structure for the final fastq files.
 		Pipeline.create_final_locations(self)
 
-		# the NextSeq has each sample in multiple lanes- concat those
-		self.move_fastq_files()
+		# move the fastq files to the final location:
+		self.move_files()
 	
 		# run the fastQC process:
 		Pipeline.run_fastqc(self)
@@ -370,8 +369,26 @@ class HiSeqPipeline(Pipeline):
 
 
 	def check_samplesheet(self):
-		pass
-		# TODO: need to get a list of project IDs here and set to self.project_id_list
+
+		samplesheet_path = os.path.join(self.run_directory_path, 'SampleSheet.csv')
+		logging.info('Examining samplesheet at: %s' % samplesheet_path)
+
+		if os.path.isfile(samplesheet_path):
+			self.samplesheet_path = samplesheet_path
+			# parse out the list of project IDs and store in a set
+			project_set = set()
+			with open(samplesheet_path) as ss_file:
+				for i, line in enumerate(ss_file):
+					if i > 0:
+						project_set.add(line.strip().split(',')[9])
+
+			project_id_list = list(project_set)
+			logging.info('The following projects were identified from the SampleSheet.csv: %s' % project_id_list)
+			self.project_id_list = project_id_list
+
+		else:
+			logging.error('Could not locate a SampleSheet.csv file in %s ' % self.run_directory_path)
+			sys.exit(1)
 
 
 	def run_demux(self):
@@ -383,7 +400,7 @@ class HiSeqPipeline(Pipeline):
 			if os.path.isdir(input_dir):
 
 				# execute the perl script to set everything up:
-				call_command = self.demux_path + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --input-dir ' + input_dir + ' --mismatches 1 '
+				call_command = self.demux_path + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --input-dir ' + input_dir + ' --sample-sheet ' + self.samplesheet_path + ' --mismatches 1 '
 				Pipeline.execute_call(self, call_command)
 				
 				try:
@@ -401,9 +418,16 @@ class HiSeqPipeline(Pipeline):
 				sys.exit(1)
 
 
-	def move_fastq_files(self):
-		pass
-		# TODO: Using self.config_params_dict['demux_output_dir'], self.config_params_dict['target_dir'], and the project_id list, mv the fastq files and (maybe?) samplesheets
+	def move_files(self):
+		"""
+		Move files created by demux process into a final destination
+		"""
+		for project_id in self.project_id_list:
+			orig_project_dir_path = os.path.join(self.config_params_dict.get('demux_output_dir'), project_id)
+			dest = os.path.join(self.config_params_dict.get('target_dir'), project_id)
+
+			shutil.move(orig_project_dir_path, dest)
+
 
 
 

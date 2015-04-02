@@ -123,10 +123,10 @@ def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server
 	address_to_string = ', '.join(address_list) # this is just for the mail header
 
 	# this address gets .harvard.edu appended to it.  Doesn't really matter what this is
-	fromaddr = 'nextseq@cccb'
+	fromaddr = 'sequencer@cccb'
 
 	msg = MIMEMultipart('alternative')
-	msg['Subject'] = '[NextSeq] Data processing complete'
+	msg['Subject'] = '[DEMUX] Data processing complete'
 	msg['From'] = fromaddr
 	msg['To'] = address_to_string
 
