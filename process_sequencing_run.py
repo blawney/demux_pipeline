@@ -86,7 +86,7 @@ def parse_commandline_args():
 				dest = 'recipients')
 
 	args = parser.parse_args()
-	return (args.run_directory, args.recipients, args.instruments)
+	return (args.run_directory, args.recipients, args.instrument)
 
 
 
