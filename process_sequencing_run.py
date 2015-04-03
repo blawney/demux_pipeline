@@ -1,8 +1,10 @@
 #!/cccbstore-rc/projects/cccb/apps/Python-2.7.1/python
 
 import logging
+import os
 import sys
 import re
+import pipeline
 from report.publish import publish
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -32,31 +34,31 @@ def process():
 		sys.exit(1)
 
 	if instrument == 'nextseq':
-		pipeline = pipeline.NextSeqPipeline(run_directory_path)
+		p = pipeline.NextSeqPipeline(run_directory_path)
 	elif instrument == 'hiseq':
-		pipeline = pipeline.HiSeqPipeline(run_directory_path)
+		p = pipeline.HiSeqPipeline(run_directory_path)
 	else:
 		logging.error('Processing logic not implemented for this instrument.  Exiting')
 		sys.exit(1)
 
 	# run the processing steps (demux, fastQC)
-	pipeline.run()
+	p.run()
 
 
 	# write the HTML output and create the delivery:
-	delivery_links = publish(pipeline.target_dir, 
-				pipeline.project_id_list, 
-				pipeline.config_params_dict.get('sample_dir_prefix'), 
-				pipeline.config_params_dict.get('delivery_home'))	
+	delivery_links = publish(p.target_dir, 
+				p.project_id_list, 
+				p.config_params_dict.get('sample_dir_prefix'), 
+				p.config_params_dict.get('delivery_home'))	
 
 
 	# send email to indicate processing is complete:
 	if recipients:
 		send_notifications(recipients, delivery_links, 
-				pipeline.config_params_dict.get('smtp_server_name'), 
-				pipeline.config_params_dict.get('smtp_server_port'), 
-				pipeline.config_params_dict.get('external_url'), 
-				pipeline.config_params_dict.get('delivery_home'))
+				p.config_params_dict.get('smtp_server_name'), 
+				p.config_params_dict.get('smtp_server_port'), 
+				p.config_params_dict.get('external_url'), 
+				p.config_params_dict.get('delivery_home'))
 
 
 

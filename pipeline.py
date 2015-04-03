@@ -141,7 +141,7 @@ class Pipeline(object):
 			if os.path.isdir(target_dir):
 				self.target_dir = target_dir
 				for project_id in self.project_id_list:
-					create_project_structure(self, project_id)
+					Pipeline.create_project_structure(self, project_id)
 			else:
 				logging.error('Target directory %s does not exist for some reason.  Maybe permissions?' % target_dir)
 				sys.exit(1)
@@ -165,7 +165,7 @@ class Pipeline(object):
 
 			for fq in fastq_files:
 				try:
-					call_command = fastqc_path + ' ' + fq
+					call_command = self.config_params_dict['fastqc_path'] + ' ' + fq
 					subprocess.check_call(call_command, shell = True)
 				except subprocess.CalledProcessError:
 					logging.error('The fastqc process on fastq file (%s) had non-zero exit status.  Check the log.' % fq)
@@ -207,8 +207,8 @@ class NextSeqPipeline(Pipeline):
 		"""
 		This writes the call for the demux process.  Uses the parent to execute the actual process.
 		"""
-			call_command = self.demux_path + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --runfolder-dir ' + self.run_directory_path
-			Pipeline.execute_call(self, call_command)
+		call_command = self.config_params_dict['demux_path'] + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --runfolder-dir ' + self.run_directory_path
+		Pipeline.execute_call(self, call_command)
 
 
 	def line_is_valid(self, line):
@@ -349,16 +349,19 @@ class HiSeqPipeline(Pipeline):
 
 	def run(self):
 		Pipeline.parse_config_file(self)
-		Pipeline.create_output_directory(self)
+		self.config_params_dict['demux_output_dir'] = os.path.join(self.run_directory_path, self.config_params_dict.get('demux_output_dir'))
 
 		# parse out the projects and also do a check on the SampleSheet.csv to ensure the correct parameters have been entered
 		self.check_samplesheet()
 
 		# actually start the demux process:
-		self.run_demux()
+		#self.run_demux()
 	
 		# sets up the directory structure for the final fastq files.
 		Pipeline.create_final_locations(self)
+
+		# concatenate the fastq files
+		self.concat_fastq_files()
 
 		# move the fastq files to the final location:
 		self.move_files()
@@ -383,6 +386,10 @@ class HiSeqPipeline(Pipeline):
 						project_set.add(line.strip().split(',')[9])
 
 			project_id_list = list(project_set)
+
+			# bcl2fastq software automatically appends a prefix to the 'project' field.  
+			# e.g. If field 10 (index 9) is 'XXX', then bcl2fastq makes a directory called 'Project_XXX'
+			project_id_list = [self.config_params_dict['project_prefix'] + x for x in project_id_list]
 			logging.info('The following projects were identified from the SampleSheet.csv: %s' % project_id_list)
 			self.project_id_list = project_id_list
 
@@ -395,27 +402,27 @@ class HiSeqPipeline(Pipeline):
 		"""
 		This writes the call for the demux process.  Uses the parent object to execute the actual process.
 		"""
-			# the run directory was passed via commandline.  Append the default path to the BaseCalls directory:
-			input_dir = os.path.join(self.run_directory_path, self.config_params_dict['basecalls_dir_rel_path'])
-			if os.path.isdir(input_dir):
+		# the run directory was passed via commandline.  Append the default path to the BaseCalls directory:
+		input_dir = os.path.join(self.run_directory_path, self.config_params_dict['basecalls_dir_rel_path'])
+		if os.path.isdir(input_dir):
 
-				# execute the perl script to set everything up:
-				call_command = self.demux_path + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --input-dir ' + input_dir + ' --sample-sheet ' + self.samplesheet_path + ' --mismatches 1 '
-				Pipeline.execute_call(self, call_command)
+			# execute the perl script to set everything up:
+			call_command = self.config_params_dict['demux_path'] + ' --output-dir ' + self.config_params_dict['demux_output_dir'] + ' --input-dir ' + input_dir + ' --sample-sheet ' + self.samplesheet_path + ' --mismatches 1 '
+			Pipeline.execute_call(self, call_command)
 				
-				try:
-					i = int(self.config_params_dict['demux_jobs'])
-				except ValueError:
-					logging.info('The value for "demux_jobs" given in the configuration file needs to be an integer.  Ignoring and setting "-j 8" by default.')
-					self.config_params_dict['demux_jobs'] = '8' # an integer given as a string (since it will be concatenated to a string object below).
+			try:
+				i = int(self.config_params_dict['demux_jobs'])
+			except ValueError:
+				logging.info('The value for "demux_jobs" given in the configuration file needs to be an integer.  Ignoring and setting "-j 8" by default.')
+				self.config_params_dict['demux_jobs'] = '8' # an integer given as a string (since it will be concatenated to a string object below).
 
-				# create the make command for starting the actual demux.  Pass the -C flag so we do not have to change directories, etc.  
-				call_command = 'make -C ' + self.config_params_dict['demux_output_dir'] + ' -j ' + self.config_params_dict['demux_jobs']
-				Pipeline.execute_call(self, call_command)
+			# create the make command for starting the actual demux.  Pass the -C flag so we do not have to change directories, etc.  
+			call_command = 'make -C ' + self.config_params_dict['demux_output_dir'] + ' -j ' + self.config_params_dict['demux_jobs']
+			Pipeline.execute_call(self, call_command)
 
-			else:
-				logging.error('The HiSeq run output is non-standard-- the BaseCalls directory was supposed to be located at: %s' % input_dir)
-				sys.exit(1)
+		else:
+			logging.error('The HiSeq run output is non-standard-- the BaseCalls directory was supposed to be located at: %s' % input_dir)
+			sys.exit(1)
 
 
 	def move_files(self):
@@ -424,12 +431,13 @@ class HiSeqPipeline(Pipeline):
 		"""
 		for project_id in self.project_id_list:
 			orig_project_dir_path = os.path.join(self.config_params_dict.get('demux_output_dir'), project_id)
-			dest = os.path.join(self.config_params_dict.get('target_dir'), project_id)
+			dest = os.path.join(self.target_dir, project_id)
 
 			shutil.move(orig_project_dir_path, dest)
 
 
-
+	def concat_fastq_files(self):
+		pass
 
 
 
