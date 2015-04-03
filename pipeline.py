@@ -364,7 +364,7 @@ class HiSeqPipeline(Pipeline):
 		self.concat_fastq_files()
 
 		# move the fastq files to the final location:
-		self.move_files()
+		self.move_other_files()
 	
 		# run the fastQC process:
 		Pipeline.run_fastqc(self)
@@ -425,19 +425,78 @@ class HiSeqPipeline(Pipeline):
 			sys.exit(1)
 
 
-	def move_files(self):
+	def move_other_files(self):
 		"""
-		Move files created by demux process into a final destination
+		Move other files (not fastq files) created by demux process into a final destination
 		"""
 		for project_id in self.project_id_list:
 			orig_project_dir_path = os.path.join(self.config_params_dict.get('demux_output_dir'), project_id)
-			dest = os.path.join(self.target_dir, project_id)
+			orig_samplesheet_files = glob.glob(os.path.join(orig_project_dir_path, '*', 'SampleSheet.csv'))
+			dest_samplesheet_files = [re.sub(self.config_params_dict.get('demux_output_dir'), self.target_dir, x) for x in orig_samplesheet_files]
+			for i in range(len(orig_samplesheet_files)):
+				shutil.copyfile(orig_samplesheet_files[i], dest_samplesheet_files[i])
 
-			shutil.move(orig_project_dir_path, dest)
 
 
 	def concat_fastq_files(self):
-		pass
+		'''
+		Merges the (many) fastq files in the demux output directory.  Concatenates them to the final location (e.g. not in the demux dir)
+		'''
+
+		for project_id in self.project_id_list:
+
+			project_dir = os.path.join(self.config_params_dict.get('demux_output_dir'), project_id)
+
+			# get the sample-specific subdirectories and append the path to the project directory in front (for full path name):
+			# this gives the fully qualified location of the original fastq files (by lane)
+			sample_dirs = [os.path.join(project_dir, d) for d in os.listdir(project_dir) if d.startswith(self.config_params_dict.get('sample_dir_prefix'))] 
+
+			# double check that they are actually directories:
+			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
+
+			for sample_dir in sample_dirs:
+				# since bcl2fastq renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
+				sample_name_with_prefix = os.path.basename(sample_dir)
+				sample_name = sample_name_with_prefix.strip(self.config_params_dict.get('sample_dir_prefix'))
+
+				# get all the fastq files as lists.  Note the sort so they are concatenated in the same order for paired-end protocol
+				# in future, may want to update to regex-- perhaps it is possible that edge cases could glob incorrectly?
+				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*_R1_*.fastq.gz')))			
+				read_2_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*_R2_*.fastq.gz'))) # will be empty list [] if single-end protocol
+
+				# need at least the read 1 files to continue
+				if len(read_1_fastq_files) == 0:
+					logging.error('Did not find any fastq files in %s directory.' % sample_dir)
+					sys.exit(1)			
+
+				# make file names for the merged files:
+				merged_read_1_fastq = sample_name + '_R1_001.fastq.gz'
+				merged_read_2_fastq = sample_name + '_R2_001.fastq.gz'
+
+				# construct full paths to the final files:
+				merged_read_1_fastq = os.path.join(self.target_dir, project_id, sample_name_with_prefix, merged_read_1_fastq)
+				merged_read_2_fastq = os.path.join(self.target_dir, project_id, sample_name_with_prefix, merged_read_2_fastq)
+
+				# an inline method to compose the concatenation command:
+				write_call = lambda infiles,outfile: 'cat '+ ' '.join(infiles) + ' >' + outfile
+
+				call_list = []
+				call_list.append(write_call(read_1_fastq_files, merged_read_1_fastq))
+				if len(read_2_fastq_files) > 0:
+					if len(read_2_fastq_files) == len(read_1_fastq_files):
+						call_list.append(write_call(read_2_fastq_files, merged_read_2_fastq))
+					else:
+						logging.error('Differing number of FASTQ files between R1 and R2')
+						sys.exit(1)
+
+				for call in call_list:
+					try:
+						logging.info('Issuing system command: %s ' % call)
+						subprocess.check_call( call, shell = True )			
+					except subprocess.CalledProcessError:
+						logging.error('The concatentation of the segmented fastq files failed somehow')
+						sys.exit(1)
+					
 
 
 
