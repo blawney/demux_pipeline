@@ -355,7 +355,7 @@ class HiSeqPipeline(Pipeline):
 		self.check_samplesheet()
 
 		# actually start the demux process:
-		#self.run_demux()
+		self.run_demux()
 	
 		# sets up the directory structure for the final fastq files.
 		Pipeline.create_final_locations(self)
