@@ -133,13 +133,21 @@ def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server
 	msg['To'] = address_to_string
 
 	msg.attach(MIMEText(body_text, 'html'))
-	try:
-		server = smtplib.SMTP(smtp_server_name, smtp_server_port)
-		server.sendmail(fromaddr, address_list, msg.as_string())
-	except Exception:
-		logging.error('There was an error composing the email to the recipients.')
-		sys.exit(1)
 
+	not_sent = True
+	attempts = 0
+	max_attempts = 10
+	while not_sent and attempts < max_attempts:
+		try:
+			server = smtplib.SMTP(smtp_server_name, smtp_server_port)
+			server.sendmail(fromaddr, address_list, msg.as_string())
+			not_sent = False
+		except Exception:
+			attempts += 1
+			logging.info('There was an error composing the email to the recipients.  Trying again')
+
+	if not_sent:
+		logging.error('After %s attempts, still could not send email.' % max_attempts)
 
 
 
