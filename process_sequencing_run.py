@@ -140,11 +140,13 @@ def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server
 	while not_sent and attempts < max_attempts:
 		try:
 			server = smtplib.SMTP(smtp_server_name, smtp_server_port)
+			server.helo()
 			server.sendmail(fromaddr, address_list, msg.as_string())
 			not_sent = False
-		except Exception:
+		except Exception as ex:
 			attempts += 1
 			logging.info('There was an error composing the email to the recipients.  Trying again')
+			logging.info(ex.message)
 
 	if not_sent:
 		logging.error('After %s attempts, still could not send email.' % max_attempts)

@@ -94,6 +94,13 @@ class Pipeline(object):
 		try:
 			os.mkdir(new_project_dir)
 			logging.info('Created directory for project %s at %s' % (project_id, new_project_dir))
+		except OSError as ex:
+			if ex.errno == 17: # directory was already there
+				logging.info('Project directory at %s was already present.' % new_project_dir)
+			else:
+				logging.error('There was an issue creating a directory at %s' % new_project_dir)
+				sys.exit(1)
+		try:
 			for sample_dir in sample_dirs:
 				sample_dir = os.path.join(new_project_dir, sample_dir)
 				os.mkdir(sample_dir)
@@ -102,10 +109,9 @@ class Pipeline(object):
 			correct_permissions(new_project_dir)
 		except OSError as ex:
 			if ex.errno == 17: # directory was already there
-				logging.info('Directory was already present.  Generally this should not occur, so something is likely wrong.')
-				sys.exit(1)
+				logging.info('Sample directory at %s was already present.  Generally this should not occur, so something is likely wrong.  Not exiting, but check this over.' % sample_dir)
 			else:
-				logging.error('There was an issue creating a directory at %s' % new_project_dir)
+				logging.error('There was an issue creating a sample directory at %s' % sample_dir)
 				sys.exit(1)
 
 
@@ -226,7 +232,7 @@ class NextSeqPipeline(Pipeline):
 			tests = []
 			tests.append(pattern.match(elements[1]).group() == elements[1]) # if the greedy regex did not match the sample name, then something is wrong.
 			tests.append(elements[0].startswith(self.config_params_dict.get('sample_dir_prefix'))) # check that the Sample_ID field has the proper prefix
-			tests.append(elements[0].strip(self.config_params_dict.get('sample_dir_prefix')) == elements[1]) # check that the sample names match between the first and second fields
+			tests.append(elements[0].lstrip(self.config_params_dict.get('sample_dir_prefix')) == elements[1]) # check that the sample names match between the first and second fields
 			# tests.append(len(elements[5]) == 7) # check that 7bp index was provided
 			tests.append(pattern.match(elements[6]).group() == elements[6]) # if the greedy regex did not match the full project designation then something is wrong.
 			return all(tests)
@@ -299,7 +305,7 @@ class NextSeqPipeline(Pipeline):
 			for sample_dir in sample_dirs:
 				# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 				sample_name_with_prefix = os.path.basename(sample_dir)
-				sample_name = sample_name_with_prefix.strip(self.config_params_dict.get('sample_dir_prefix'))
+				sample_name = sample_name_with_prefix.lstrip(self.config_params_dict.get('sample_dir_prefix'))
 
 				# get all the fastq files as lists.  Note the sort so they are concatenated in the same order for paired-end protocol
 				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R1_001.fastq.gz')))			
@@ -457,7 +463,7 @@ class HiSeqPipeline(Pipeline):
 			for sample_dir in sample_dirs:
 				# since bcl2fastq renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 				sample_name_with_prefix = os.path.basename(sample_dir)
-				sample_name = sample_name_with_prefix.strip(self.config_params_dict.get('sample_dir_prefix'))
+				sample_name = sample_name_with_prefix.lstrip(self.config_params_dict.get('sample_dir_prefix'))
 
 				# get all the fastq files as lists.  Note the sort so they are concatenated in the same order for paired-end protocol
 				# in future, may want to update to regex-- perhaps it is possible that edge cases could glob incorrectly?
