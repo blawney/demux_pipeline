@@ -45,7 +45,10 @@ def create_delivery_locations(delivery_home, project_id_list):
         try:
                 os.makedirs(destination_dir)
 		logging.info('Created a time-stamped destination directory at %s ' % destination_dir)
-		correct_permissions(destination_dir)
+		# to give the correct permissions to the full hierarchy of files, have to correct the permissions from the 'year'-level directory.
+		# correcting from the 'month' level directory could leave a new 'year'-level directory without the correct permissions.
+		# Not a big deal if this weren't implemented since this case is only encountered for the first project of a new year.
+		correct_permissions(os.path.realpath(os.path.join(destination_dir,os.path.pardir)))
         except OSError as ex:
 		if ex.errno != 17: # 17 indicates that the directory was already there.
 		        logging.error('Exception occured:')
@@ -57,7 +60,9 @@ def create_delivery_locations(delivery_home, project_id_list):
         if os.path.isdir(destination_dir):
                 for project_id in project_id_list:
 			try:
-				os.mkdir(os.path.join(destination_dir, project_id))
+				new_project_dir = os.path.join(destination_dir, project_id)
+				os.mkdir(new_project_dir)
+				correct_permissions(new_project_dir)
 				logging.info('Created a project directory at %s' % os.path.join(destination_dir, project_id))
         		except OSError as ex:
 				logging.error('Could not create the directory for the project %s inside %s' % (project_id, destination_dir))

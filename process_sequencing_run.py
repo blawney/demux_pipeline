@@ -1,4 +1,4 @@
-#!/cccbstore-rc/projects/cccb/apps/Python-2.7.1/python
+#!/cccbstore-rc/projects/cccb/apps/python27/bin/python
 
 import logging
 import os
