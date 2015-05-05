@@ -173,6 +173,11 @@ class Pipeline(object):
 				try:
 					call_command = self.config_params_dict['fastqc_path'] + ' ' + fq
 					subprocess.check_call(call_command, shell = True)
+
+					# get the name of the output directory from the fastQC process:
+					fastqc_dir_name = os.path.basename(fq).rstrip('.fastq.gz') + '_fastqc'
+					fastqc_dir = os.path.join(os.path.dirname(fq), fastqc_dir_name)
+					correct_permissions(fastqc_dir)
 				except subprocess.CalledProcessError:
 					logging.error('The fastqc process on fastq file (%s) had non-zero exit status.  Check the log.' % fq)
 					sys.exit(1)
