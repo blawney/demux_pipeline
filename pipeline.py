@@ -311,6 +311,10 @@ class NextSeqPipeline(Pipeline):
 				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R1_001.fastq.gz')))			
 				read_2_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R2_001.fastq.gz'))) # will be empty list [] if single-end protocol
 
+				paired = False
+				if len(read_2_fastq_files) > 0:
+					paired = True
+
 				# need at least the read 1 files to continue
 				if len(read_1_fastq_files) == 0:
 					logging.error('Did not find any fastq files in %s directory.' % sample_dir)
@@ -339,7 +343,10 @@ class NextSeqPipeline(Pipeline):
 				for call in call_list:
 					try:
 						logging.info('Issuing system command: %s ' % call)
-						subprocess.check_call( call, shell = True )			
+						subprocess.check_call( call, shell = True )
+						os.chmod(merged_read_1_fastq, 0775)	
+						if paired:
+							os.chmod(merged_read_2_fastq, 0775)	
 					except subprocess.CalledProcessError:
 						logging.error('The concatentation of the lane-specific fastq files failed somehow')
 						sys.exit(1)
@@ -470,6 +477,10 @@ class HiSeqPipeline(Pipeline):
 				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*_R1_*.fastq.gz')))			
 				read_2_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*_R2_*.fastq.gz'))) # will be empty list [] if single-end protocol
 
+				paired = False
+				if len(read_2_fastq_files) > 0:
+					paired = True
+
 				# need at least the read 1 files to continue
 				if len(read_1_fastq_files) == 0:
 					logging.error('Did not find any fastq files in %s directory.' % sample_dir)
@@ -498,7 +509,10 @@ class HiSeqPipeline(Pipeline):
 				for call in call_list:
 					try:
 						logging.info('Issuing system command: %s ' % call)
-						subprocess.check_call( call, shell = True )			
+						subprocess.check_call( call, shell = True )
+						os.chmod(merged_read_1_fastq, 0775)
+						if paired:
+							os.chmod(merged_read_2_fastq, 0775)
 					except subprocess.CalledProcessError:
 						logging.error('The concatentation of the segmented fastq files failed somehow')
 						sys.exit(1)
