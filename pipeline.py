@@ -180,7 +180,7 @@ class Pipeline(object):
 					subprocess.check_call(call_command, shell = True)
 
 					# get the name of the output directory from the fastQC process:
-					fastqc_dir_name = os.path.basename(fq).rstrip('.fastq.gz') + '_fastqc'
+					fastqc_dir_name = os.path.basename(fq)[:-len('.fastq.gz')] + '_fastqc'
 					fastqc_dir = os.path.join(os.path.dirname(fq), fastqc_dir_name)
 					correct_permissions(fastqc_dir)
 				except subprocess.CalledProcessError:
@@ -315,7 +315,7 @@ class NextSeqPipeline(Pipeline):
 			for sample_dir in sample_dirs:
 				# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 				sample_name_with_prefix = os.path.basename(sample_dir)
-				sample_name = sample_name_with_prefix.lstrip(self.config_params_dict.get('sample_dir_prefix'))
+				sample_name = sample_name_with_prefix[len(self.config_params_dict.get('sample_dir_prefix')):]
 
 				# get all the fastq files as lists.  Note the sort so they are concatenated in the same order for paired-end protocol
 				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R1_001.fastq.gz')))			
@@ -480,7 +480,7 @@ class HiSeqPipeline(Pipeline):
 			for sample_dir in sample_dirs:
 				# since bcl2fastq renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 				sample_name_with_prefix = os.path.basename(sample_dir)
-				sample_name = sample_name_with_prefix.lstrip(self.config_params_dict.get('sample_dir_prefix'))
+				sample_name = sample_name_with_prefix[len(self.config_params_dict.get('sample_dir_prefix')):]
 
 				# get all the fastq files as lists.  Note the sort so they are concatenated in the same order for paired-end protocol
 				# in future, may want to update to regex-- perhaps it is possible that edge cases could glob incorrectly?
