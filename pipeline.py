@@ -128,24 +128,29 @@ class Pipeline(object):
 
 		# double-check that the config file had a valid path to a directory
 		if os.path.isdir(self.config_params_dict.get('destination_path')):
-			target_dir = os.path.join(self.config_params_dict.get('destination_path'), str(year), str(month))
 
 			# try to create the directory-- it may already exist, in which case we catch the exception and move on.
 			# Any other errors encountered in creating the directory will cause pipeline to exit
 			try:
-				os.makedirs(target_dir)
-				logging.info('Creating final directory for the projects at: %s' % target_dir)
-				correct_permissions(target_dir)
+				year_dir = os.path.join(self.config_params_dict.get('destination_path'), str(year))
+				if not os.path.isdir(year_dir):
+					os.mkdir(year_dir)
+					correct_permissions(year_dir)
+					logging.info('Creating new year-level directory at %s' % year_dir)
+				month_dir = os.path.join(year_dir, str(month))
+				if not os.path.isdir(month_dir):
+					os.mkdir(month_dir)
+					correct_permissions(month_dir)
+					logging.info('Creating new month-level directory at %s' % month_dir)					
+
 			except OSError as ex:
-				if ex.errno != 17: # 17 indicates that the directory was already there.
-					logging.error('Exception occured:')
-					logging.error(ex.strerror)
-					sys.exit(1)
-				else:
-					logging.info('The final (date-stamped) directory at %s already existed.' % target_dir)
+				logging.error('Exception occured:')
+				logging.error(ex.strerror)
+				sys.exit(1)
+
 			# check that we do have a destination directory to go to.
-			if os.path.isdir(target_dir):
-				self.target_dir = target_dir
+			if os.path.isdir(month_dir):
+				self.target_dir = month_dir
 				for project_id in self.project_id_list:
 					Pipeline.create_project_structure(self, project_id)
 			else:
