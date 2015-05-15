@@ -100,7 +100,7 @@ def setup_links(date_stamped_delivery_dir, origin_dir, project_id_list, sample_d
 	project_to_sample_mappings = {}
 	for project_id in project_id_list:
 		original_project_dir = os.path.join(origin_dir, project_id)
-		sample_names = [s.strip(sample_dir_prefix) for s in os.listdir(original_project_dir) if s.startswith(sample_dir_prefix)]
+		sample_names = [s[len(sample_dir_prefix):] for s in os.listdir(original_project_dir) if s.startswith(sample_dir_prefix)]
 		final_destination = os.path.join(date_stamped_delivery_dir, project_id)
 		fastq_files = glob.glob(os.path.join(original_project_dir, sample_dir_prefix + '*', '*.fastq.gz'))
 		fastqc_dirs = glob.glob(os.path.join(original_project_dir, sample_dir_prefix + '*', '*'+fastqc_output_suffix))
