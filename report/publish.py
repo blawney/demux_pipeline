@@ -82,6 +82,7 @@ def correct_permissions(directory):
 	Recurses through all directories and files underneath the path passed as the argument
 	"""
 	logging.info('Giving 0775 permissions to all directories underneath %s' % directory)
+	os.chmod(directory, 0775)
 	for root, dirs, files in os.walk(directory):
 		for d in dirs:
 			os.chmod(os.path.join(root, d), 0775)

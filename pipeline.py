@@ -14,6 +14,8 @@ def correct_permissions(directory):
 	Gives write privileges to the biocomp group (if not already there)
 	Recurses through all directories and files underneath the path passed as the argument
 	"""
+	logging.info('Changing permissions on all directories underneath %s' % directory)
+	os.chmod(directory, 0775)
 	for root, dirs, files in os.walk(directory):
 		for d in dirs:
 			os.chmod(os.path.join(root, d), 0775)
