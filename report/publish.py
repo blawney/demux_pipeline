@@ -47,7 +47,6 @@ def create_delivery_locations(delivery_home, project_id_list):
 		logging.info('Created a time-stamped destination directory at %s ' % destination_dir)
 		# to give the correct permissions to the full hierarchy of files, have to correct the permissions from the 'year'-level directory.
 		# correcting from the 'month' level directory could leave a new 'year'-level directory without the correct permissions.
-		# Not a big deal if this weren't implemented since this case is only encountered for the first project of a new year.
 		correct_permissions(os.path.realpath(os.path.join(destination_dir,os.path.pardir)))
         except OSError as ex:
 		if ex.errno != 17: # 17 indicates that the directory was already there.
@@ -236,6 +235,33 @@ def copy_libraries(report_directory, lib_dirname, date_stamped_delivery_dir, pro
 	logging.info('Copying js/css/etc. libraries from %s' % library_location)
 
 
+def add_index_file(date_stamped_delivery_dir, this_dir):
+	"""
+	Adds the index.html file (if it doesn't exist) to the various delivery directories so others can't view the listing
+	date_stamped_delivery_dir is the month-level directory e.g. ...../frd/2015/6
+	"""
+	idx_name = 'index.html'
+
+	# check that we have a file to copy:
+	logging.info('Checking for %s file in %s.' % (idx_name, this_dir))
+	file_to_copy = os.path.join(this_dir, idx_name)
+	if not os.path.isfile(file_to_copy):
+		raise Exception('The %s file is not in the correct location to copy to the delivery location.' % idx_name)
+	
+	try:
+		# check year-level directory for this index file, copy if not present
+		year_dir = os.path.realpath(os.path.join(date_stamped_delivery_dir,os.path.pardir))
+		if not os.path.isfile(os.path.join(year_dir, idx_name)):
+			logging.info('Copying %s file to %s' % (file_to_copy, year_dir) )
+			shutil.copy(file_to_copy, year_dir)
+
+		# check month-level directory for this file, copy if not present
+		if not os.path.isfile(os.path.join(date_stamped_delivery_dir, idx_name)):
+			logging.info('Copying %s file to %s' % (file_to_copy, date_stamped_delivery_dir) )
+			shutil.copy(file_to_copy, date_stamped_delivery_dir)
+	except Exception as ex:
+		raise Exception('Failed to copy index html file to the outgoing directories')
+
 
 def publish(origin_dir, project_id_list, sample_dir_prefix, delivery_home): 
 	
@@ -257,5 +283,8 @@ def publish(origin_dir, project_id_list, sample_dir_prefix, delivery_home):
 	# create the HTML reports
 	project_links = write_reports(current_dir, date_stamped_delivery_dir, parameters_dict, project_to_sample_map)	
 	
+	# Make sure index.html file resides in the outgoing directory hierarchy so can't view other projects:
+	add_index_file(date_stamped_delivery_dir, current_dir)
+
 	return project_links
 

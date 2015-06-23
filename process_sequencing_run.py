@@ -7,6 +7,8 @@ import re
 import pipeline
 from report.publish import publish
 import smtplib
+import datetime
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -17,16 +19,15 @@ AVAILABLE_INSTRUMENTS = ['nextseq', 'hiseq']
 def process():
 
 	# kickoff the processing:
-	run_directory_path, recipients, instrument = parse_commandline_args()
+	run_directory_path, recipients, instrument, log_dir = parse_commandline_args()
 
-	# setup a logger that prints to stdout:
-	root = logging.getLogger()
-	root.setLevel(logging.INFO)
-	ch = logging.StreamHandler(sys.stdout)
-	ch.setLevel(logging.DEBUG)
-	formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
-	ch.setFormatter(formatter)
-	root.addHandler(ch)
+	timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+	if log_dir:
+		logfile = os.path.join(log_dir, str(timestamp)+".demux.log")
+	else:
+		logfile = os.path.join(run_directory_path, str(timestamp)+".demux.log")
+
+	logging.basicConfig(filename=logfile, level=logging.INFO, format="%(asctime)s:%(levelname)s:%(message)s")
 
 	# before starting anything- check that the cmdline arg was valid:
 	if not os.path.isdir(run_directory_path):
@@ -55,8 +56,8 @@ def process():
 	# send email to indicate processing is complete:
 	if recipients:
 		send_notifications(recipients, delivery_links, 
-				p.config_params_dict.get('smtp_server_name'), 
-				p.config_params_dict.get('smtp_server_port'), 
+				p.config_params_dict.get('smtp_server'), 
+				p.config_params_dict.get('smtp_port'), 
 				p.config_params_dict.get('external_url'), 
 				p.config_params_dict.get('delivery_home'))
 
@@ -87,8 +88,14 @@ def parse_commandline_args():
 				help = 'Comma-separated list of email addresses for notifications (no spaces between entries)',
 				dest = 'recipients')
 
+	parser.add_argument('-l',
+				'--log',
+				required = False,
+				help = 'Directory in which to write the logfile.  Defaults to the run directory (-r) arg.',
+				dest = 'log_dir')
+
 	args = parser.parse_args()
-	return (args.run_directory, args.recipients, args.instrument)
+	return (args.run_directory, args.recipients, args.instrument, args.log_dir)
 
 
 
@@ -136,17 +143,19 @@ def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server
 
 	not_sent = True
 	attempts = 0
-	max_attempts = 10
+	max_attempts = 3
+	server = smtplib.SMTP(smtp_server_name, smtp_server_port)
 	while not_sent and attempts < max_attempts:
 		try:
-			server = smtplib.SMTP(smtp_server_name, smtp_server_port)
-			server.helo()
 			server.sendmail(fromaddr, address_list, msg.as_string())
 			not_sent = False
 		except Exception as ex:
 			attempts += 1
-			logging.info('There was an error composing the email to the recipients.  Trying again')
+			logging.info("Type of exception: " + str(type(ex)))
+			logging.info('There was an error composing the email to the recipients.  Trying again after sleeping')
 			logging.info(ex.message)
+			logging.exception("Error!")
+			time.sleep(5)
 
 	if not_sent:
 		logging.error('After %s attempts, still could not send email.' % max_attempts)
