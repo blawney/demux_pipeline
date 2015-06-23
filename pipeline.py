@@ -77,11 +77,19 @@ class Pipeline(object):
 		"""
 		This executes the call passed via the call_command the argument.  Catches any errors in the process via the system exit code
 		"""
-		try:
-			logging.info('Executing the following call to the shell:\n %s ' % call_command)
-			subprocess.check_call(call_command, shell = True)
-		except subprocess.CalledProcessError:
+		
+		logging.info('Executing the following call to the shell:\n %s ' % call_command)
+		process = subprocess.Popen(call_command, shell = True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+		while True:
+			line = process.stdout.readline()
+			if not line:
+				break
+			logging.info(line)
+
+		process.wait()		
+		if process.returncode != 0:
 			logging.error('The called process had non-zero exit status.  Check the log.')
+			logging.info('Return code: %s ' % process.returncode)
 			sys.exit(1)
 
 
