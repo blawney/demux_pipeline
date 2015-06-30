@@ -1,6 +1,7 @@
 #!/cccbstore-rc/projects/cccb/apps/python27/bin/python
 
 import os
+import sys
 from ConfigParser import SafeConfigParser
 import subprocess
 import smtplib
@@ -88,6 +89,10 @@ def main(params):
 	# Load the pipeline_cache file, which tells us which directories have already been processed
 	CACHE = os.path.join(this_dir, params.get('cache_file'))
 	processed_flowcells = set([d.strip() for d in open(CACHE)])
+
+	# resolve symlinks, etc. by using realpath method:
+	all_flowcell_dirs = set(map(os.path.realpath, all_flowcell_dirs))
+	processed_flowcells = set(map(os.path.realpath, processed_flowcells))
 
 	# Detect new/unprocessed directories by looking at the set difference:
 	unprocessed_dirs = all_flowcell_dirs.difference(processed_flowcells)
