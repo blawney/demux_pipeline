@@ -119,7 +119,7 @@ class Pipeline(object):
 			correct_permissions(new_project_dir)
 		except OSError as ex:
 			if ex.errno == 17: # directory was already there
-				logging.warning('Sample directory at %s was already present.  Generally this should not occur, so something is likely wrong.  Not exiting, but check this over.' % sample_dir)
+				logging.warning('Sample directory at %s was already present.  Generally this should not occur, so something could be wrong.  However, if the same sample we sequenced in two or more different runs, then this is expected.  Not exiting, but check this over.' % sample_dir)
 			else:
 				logging.error('There was an issue creating a sample directory at %s' % sample_dir)
 				sys.exit(1)
