@@ -64,8 +64,11 @@ def create_delivery_locations(delivery_home, project_id_list):
 				correct_permissions(new_project_dir)
 				logging.info('Created a project directory at %s' % os.path.join(destination_dir, project_id))
         		except OSError as ex:
-				logging.error('Could not create the directory for the project %s inside %s' % (project_id, destination_dir))
-				sys.exit(1)
+				if ex.errno != 17:
+					logging.error('Could not create the directory for the project %s inside %s' % (project_id, destination_dir))
+					sys.exit(1)
+				else:
+					logging.info('There was an existing directory at %s.  This will re-create any HTML page in the directory to reflect the project updates.' % new_project_dir)
 		return destination_dir
 
         else:
