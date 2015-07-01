@@ -43,11 +43,16 @@ def create_delivery_locations(delivery_home, project_id_list):
         # try to create the directory-- it may already exist, in which case we catch the exception and move on.
         # Any other errors encountered in creating the directory will cause pipeline to exit
         try:
-                os.makedirs(destination_dir)
-		logging.info('Created a time-stamped destination directory at %s ' % destination_dir)
-		# to give the correct permissions to the full hierarchy of files, have to correct the permissions from the 'year'-level directory.
-		# correcting from the 'month' level directory could leave a new 'year'-level directory without the correct permissions.
-		correct_permissions(os.path.realpath(os.path.join(destination_dir,os.path.pardir)))
+		# check if year-level directory exists already:
+		year_dir = os.path.join(delivery_home, str(year))
+		if not os.path.isdir(year_dir):
+			logging.info('Did not find a year-level directory at %s, so creating it.' % year_dir)
+			os.makedirs(year_dir)
+			correct_permissions(os.path.realpath(year_dir))
+		if not os.path.isdir(destination_dir):
+			logging.info('Did not find a month-level directory at %s, so creating it.' % destination_dir)
+	                os.makedirs(destination_dir)
+			correct_permissions(destination_dir)
         except OSError as ex:
 		if ex.errno != 17: # 17 indicates that the directory was already there.
 		        logging.error('Exception occured:')
