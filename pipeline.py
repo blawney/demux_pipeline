@@ -181,7 +181,7 @@ class Pipeline(object):
 			fastq_files = []
 			for root, dirs, files in os.walk(project_dir):
 				for f in files:
-					if f.lower().endswith('fastq.gz'):
+					if f.lower().endswith('final.fastq.gz'):
 						fastq_files.append(os.path.join(root, f))
 
 			for fq in fastq_files:
@@ -245,8 +245,8 @@ class Pipeline(object):
 					sys.exit(1)			
 
 				# make file names for the merged files:
-				merged_read_1_fastq = sample_name + '_R1_001.fastq.gz'
-				merged_read_2_fastq = sample_name + '_R2_001.fastq.gz'
+				merged_read_1_fastq = sample_name + '_R1_.' + self.config_params_dict.get('tmp_fastq_tag') + '.fastq.gz'
+				merged_read_2_fastq = sample_name + '_R2_.' + self.config_params_dict.get('tmp_fastq_tag') + '.fastq.gz'
 
 				# construct full paths to the final files:
 				merged_read_1_fastq = os.path.join(self.target_dir, project_id, sample_name_with_prefix, merged_read_1_fastq)
@@ -276,6 +276,59 @@ class Pipeline(object):
 						sys.exit(1)
 
 
+	def merge_and_rename_fastq(self, sample_dir, read_num):
+
+		sample_name_with_prefix = os.path.basename(sample_dir)
+		sample_name = sample_name_with_prefix[len(self.config_params_dict.get('sample_dir_prefix')):]
+
+		k = str(read_num)
+		new_read_fastq = os.path.join(sample_dir, sample_name + '_R' + k + '_.' + self.config_params_dict.get('tmp_fastq_tag') + '.fastq.gz') # the new fastq file created during this demux
+
+		# the expected names of the final fastq files
+		existing_read_k_fastq = os.path.join(sample_dir, sample_name + '_R'+ k + '_.' + self.config_params_dict.get('final_fastq_tag') +'.fastq.gz')
+
+		if os.path.isfile(existing_read_k_fastq):
+			# concatenate the existing final fastq with the new one.  Dump the result into a temp file and then rename the tempfile
+
+			# first, rename the fastq file from this demux process to indicate which 'run' it came from
+			j = len(glob.glob(os.path.join(sample_dir, sample_name + '_R' + k +"_.fc[0-9]*.fastq.gz")))
+			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.fc' + str(j+1) + '.fastq.gz')
+			os.rename(new_read_fastq, run_specific_fq)  
+
+			# a placeholder file to concatenate into (cannot concatenate into *final.fastq.gz since that is one of the files 'providing' data to the stream
+			tmpfile = os.path.join(sample_dir, sample_name + '_R'+ k + '_.tmp')
+			cat_cmd = 'cat ' + existing_read_k_fastq + ' ' + run_specific_fq + '> ' + tmpfile
+			self.execute_call(cat_cmd)
+
+			# rename this 'final' fastq
+			os.rename(tmpfile, existing_read_k_fastq) 
+		else:
+			# an existing 'final' fastq file does not exist- simply create a symlink.  This way we retain the original fastq file from each run for the sample.  Renaming
+			# would cause us to lose track of which fastq file corresponds to which run
+			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.fc1.fastq.gz')
+			os.rename(new_read_fastq, run_specific_fq)  
+			os.symlink(run_specific_fq, existing_read_k_fastq)
+
+
+
+	def merge_with_existing_fastq_files(self):
+		"""
+		This method handles the case where the same sample has been sequenced on multiple flowcells (e.g. for extra-deep sequencing)
+		It looks for existing fastq files in the final directory and concatentates this new fastq file with those, if applicable.  
+		"""
+		for project_id in self.project_id_list:
+			sample_dirs = [os.path.join(self.target_dir, d) for d in os.listdir(os.path.join(self.target_dir, project_id)) if d.startswith(self.config_params_dict.get('sample_dir_prefix'))] 
+
+			# double check that they are actually directories:
+			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
+
+			for sample_dir in sample_dirs:
+				self.merge_and_rename_fastq(sample_dir, 1)
+				if len(glob.glob(os.path.join(sample_dir, '*_R2_*.fastq.gz'))) > 0:
+					self.merge_and_rename_fastq(sample_dir, 2)
+
+
+
 class NextSeqPipeline(Pipeline):
 	
 	def __init__(self, run_directory_path):
@@ -297,6 +350,9 @@ class NextSeqPipeline(Pipeline):
 
 		# the NextSeq has each sample in multiple lanes- concat those
 		Pipeline.concatenate_fastq_files(self)
+
+		# handle concatenation of these new fastq files with those that may already exist (in the case of same sample on multiple flowcells)
+		Pipeline.merge_with_existing_fastq_files(self)
 	
 		# run the fastQC process:
 		Pipeline.run_fastqc(self)
@@ -319,7 +375,7 @@ class NextSeqPipeline(Pipeline):
 			tests.append(pattern.match(elements[1]).group() == elements[1]) # if the greedy regex did not match the sample name, then something is wrong.
 			tests.append(elements[0].startswith(self.config_params_dict.get('sample_dir_prefix'))) # check that the Sample_ID field has the proper prefix
 			tests.append(elements[0][len(self.config_params_dict.get('sample_dir_prefix')):] == elements[1]) # check that the sample names match between the first and second fields
-			# tests.append(len(elements[5]) == 7) # check that 7bp index was provided
+			tests.append(len(elements[5]) == 7) # check that 7bp index was provided
 			tests.append(pattern.match(elements[6]).group() == elements[6]) # if the greedy regex did not match the full project designation then something is wrong.
 			return all(tests)
 		except Exception:
@@ -340,7 +396,7 @@ class NextSeqPipeline(Pipeline):
 			# and continues until it reaches another section (or the end of the file)
 			# re.findall() returns a list-- get the first element
 			try:
-				sample_annotation_section = re.findall(r'\[Data\][^\[]*', open(samplesheet_path).read())[0]	
+				sample_annotation_section = re.findall(r'\[Data\][^\[]*', open(samplesheet_path).read())[0]
 			except IndexError:
 				logging.error('Could not find the [Data] section in the SampleSheet.csv file')
 				sys.exit(1)
