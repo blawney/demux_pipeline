@@ -181,7 +181,7 @@ class Pipeline(object):
 			fastq_files = []
 			for root, dirs, files in os.walk(project_dir):
 				for f in files:
-					if f.lower().endswith('final.fastq.gz'):
+					if f.lower().endswith(self.config_params_dict['final_fastq_tag'] + '.fastq.gz'):
 						fastq_files.append(os.path.join(root, f))
 
 			for fq in fastq_files:
