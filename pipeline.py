@@ -176,6 +176,7 @@ class Pipeline(object):
 		"""
 		Finds all the fastq files in 'target_directory' and runs them through fastQC with a system call
 		"""
+		logging.info('About to run fastQC...')
 		for project_id in self.project_id_list:
 			project_dir = os.path.join(self.target_dir, project_id)
 			fastq_files = []
@@ -324,7 +325,7 @@ class Pipeline(object):
 		"""
 		logging.info('in merge method')
 		for project_id in self.project_id_list:
-			sample_dirs = [os.path.join(self.target_dir, d) for d in os.listdir(os.path.join(self.target_dir, project_id)) if d.startswith(self.config_params_dict.get('sample_dir_prefix'))] 
+			sample_dirs = [os.path.join(self.target_dir, project_id, d) for d in os.listdir(os.path.join(self.target_dir, project_id)) if d.startswith(self.config_params_dict.get('sample_dir_prefix'))] 
 			logging.info('Sample directories for project %s: %s' % (project_id, sample_dirs))
 			# double check that they are actually directories:
 			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
