@@ -112,8 +112,31 @@ def setup_links(date_stamped_delivery_dir, origin_dir, project_id_list, sample_d
 		final_destination = os.path.join(date_stamped_delivery_dir, project_id)
 		fastq_files = glob.glob(os.path.join(original_project_dir, sample_dir_prefix + '*', '*.fastq.gz'))
 		fastqc_dirs = glob.glob(os.path.join(original_project_dir, sample_dir_prefix + '*', '*'+fastqc_output_suffix))
-		[os.symlink(fq, os.path.join(final_destination, os.path.basename(fq))) for fq in fastq_files]
-		[os.symlink(qc_dir, os.path.join(final_destination, os.path.basename(qc_dir))) for qc_dir in fastqc_dirs]
+
+		for fq in fastq_files:
+			try:
+				os.symlink(fq, os.path.join(final_destination, os.path.basename(fq)))
+			except OSError as ex:
+				if ex.errno == 17:
+					logging.info('symlinks already existed-- changing them!')
+					os.remove(os.path.join(final_destination, os.path.basename(fq)))
+					os.symlink(fq, os.path.join(final_destination, os.path.basename(fq)))
+				else:
+					logging.error('Unspecified error when creating symlinks for project delivery: %s ' % ex.strerror)
+					sys.exit(1)
+
+
+		for qc_dir in fastqc_dirs:
+			try:
+				os.symlink(qc_dir, os.path.join(final_destination, os.path.basename(qc_dir)))
+			except OSError as ex:
+				if ex.errno == 17:
+					logging.info('symlinks already existed-- changing them!')
+					os.remove(os.path.join(final_destination, os.path.basename(qc_dir)))
+					os.symlink(qc_dir, os.path.join(final_destination, os.path.basename(qc_dir)))
+				else:
+					logging.error('Unspecified error when creating symlinks for project delivery: %s ' % ex.strerror)
+					sys.exit(1)
 		project_to_sample_mappings[project_id] = sample_names
 	logging.info('Found the following project to sample mappings: ')
 	logging.info(project_to_sample_mappings)
@@ -238,9 +261,16 @@ def copy_libraries(report_directory, lib_dirname, date_stamped_delivery_dir, pro
 	'report_directory' refers to the directory of THIS file.  
 	"""
 	library_location = os.path.join(report_directory, lib_dirname)
-	final_project_dirs = [os.path.join(date_stamped_delivery_dir, d) for d in project_id_list]
-	[shutil.copytree(library_location, os.path.join(fpd, lib_dirname)) for fpd in final_project_dirs]
 	logging.info('Copying js/css/etc. libraries from %s' % library_location)
+	final_project_dirs = [os.path.join(date_stamped_delivery_dir, d) for d in project_id_list]
+	for fpd in final_project_dirs:
+		try:
+			shutil.copytree(library_location, os.path.join(fpd, lib_dirname))
+		except OSError as ex:
+			if ex.errno == 17:
+				logging.info('js/css/etc. libraries already existed, so silently ignoring this.')
+			else:
+				logging.error('Some other error occurred when copying the library files to the final location: %s' % ex.strerror)
 
 
 def add_index_file(date_stamped_delivery_dir, this_dir):
