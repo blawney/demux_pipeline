@@ -288,6 +288,7 @@ class Pipeline(object):
 		existing_read_k_fastq = os.path.join(sample_dir, sample_name + '_R'+ k + '_.' + self.config_params_dict.get('final_fastq_tag') +'.fastq.gz')
 
 		if os.path.isfile(existing_read_k_fastq):
+			logging.info('There was already a fastq file for this sample.  Merge the new fastq from this demux process with the old one.')
 			# concatenate the existing final fastq with the new one.  Dump the result into a temp file and then rename the tempfile
 
 			# first, rename the fastq file from this demux process to indicate which 'run' it came from
@@ -303,6 +304,7 @@ class Pipeline(object):
 			# rename this 'final' fastq
 			os.rename(tmpfile, existing_read_k_fastq) 
 		else:
+			logging.info('No previous fastq files for this sample were found.  Renaming to reflect which run it came from, and symlinking the final fastq')
 			# an existing 'final' fastq file does not exist- simply create a symlink.  This way we retain the original fastq file from each run for the sample.  Renaming
 			# would cause us to lose track of which fastq file corresponds to which run
 			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.fc1.fastq.gz')
@@ -323,8 +325,10 @@ class Pipeline(object):
 			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
 
 			for sample_dir in sample_dirs:
+				logging.info('Looking for previous fastq files to merge with in directory: %s' % sample_dir)
 				self.merge_and_rename_fastq(sample_dir, 1)
 				if len(glob.glob(os.path.join(sample_dir, '*_R2_*.fastq.gz'))) > 0:
+					logging.info('Found paired fastq files to merge with as well in dir: %s' % sample_dir)
 					self.merge_and_rename_fastq(sample_dir, 2)
 
 
