@@ -286,7 +286,7 @@ class Pipeline(object):
 
 		# the expected names of the final fastq files
 		existing_read_k_fastq = os.path.join(sample_dir, sample_name + '_R'+ k + '_.' + self.config_params_dict.get('final_fastq_tag') +'.fastq.gz')
-
+		logging.info('Looking for an existing fastq file at %s ' % existing_read_k_fastq)
 		if os.path.isfile(existing_read_k_fastq):
 			logging.info('There was already a fastq file for this sample.  Merge the new fastq from this demux process with the old one.')
 			# concatenate the existing final fastq with the new one.  Dump the result into a temp file and then rename the tempfile
@@ -294,6 +294,7 @@ class Pipeline(object):
 			# first, rename the fastq file from this demux process to indicate which 'run' it came from
 			j = len(glob.glob(os.path.join(sample_dir, sample_name + '_R' + k +"_.fc[0-9]*.fastq.gz")))
 			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.fc' + str(j+1) + '.fastq.gz')
+			logging.info('Renaming: %s ---> %s' % (new_read_fastq, run_specific_fq))
 			os.rename(new_read_fastq, run_specific_fq)  
 
 			# a placeholder file to concatenate into (cannot concatenate into *final.fastq.gz since that is one of the files 'providing' data to the stream
@@ -302,13 +303,16 @@ class Pipeline(object):
 			self.execute_call(cat_cmd)
 
 			# rename this 'final' fastq
+			logging.info('Renaming: %s ---> %s' % (tmpfile, existing_read_k_fastq))
 			os.rename(tmpfile, existing_read_k_fastq) 
 		else:
 			logging.info('No previous fastq files for this sample were found.  Renaming to reflect which run it came from, and symlinking the final fastq')
 			# an existing 'final' fastq file does not exist- simply create a symlink.  This way we retain the original fastq file from each run for the sample.  Renaming
 			# would cause us to lose track of which fastq file corresponds to which run
 			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.fc1.fastq.gz')
+			logging.info('Renaming: %s ---> %s' % (new_read_fastq, run_specific_fq))
 			os.rename(new_read_fastq, run_specific_fq)  
+			logging.info('Linking: %s will point at ---> %s' % (existing_read_k_fastq, run_specific_fq))
 			os.symlink(run_specific_fq, existing_read_k_fastq)
 
 
@@ -318,9 +322,10 @@ class Pipeline(object):
 		This method handles the case where the same sample has been sequenced on multiple flowcells (e.g. for extra-deep sequencing)
 		It looks for existing fastq files in the final directory and concatentates this new fastq file with those, if applicable.  
 		"""
+		logging.info('in merge method')
 		for project_id in self.project_id_list:
 			sample_dirs = [os.path.join(self.target_dir, d) for d in os.listdir(os.path.join(self.target_dir, project_id)) if d.startswith(self.config_params_dict.get('sample_dir_prefix'))] 
-
+			logging.info('Sample directories for project %s: %s' % (project_id, sample_dirs))
 			# double check that they are actually directories:
 			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
 
@@ -356,6 +361,7 @@ class NextSeqPipeline(Pipeline):
 		Pipeline.concatenate_fastq_files(self)
 
 		# handle concatenation of these new fastq files with those that may already exist (in the case of same sample on multiple flowcells)
+		logging.info('try merge')
 		Pipeline.merge_with_existing_fastq_files(self)
 	
 		# run the fastQC process:
