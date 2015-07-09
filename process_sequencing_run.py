@@ -43,7 +43,20 @@ def process():
 		sys.exit(1)
 
 	# run the processing steps (demux, fastQC)
-	p.run()
+	try:
+		p.run()
+	except Exception as ex:
+		if isinstance(ex, pipeline.SampleSheetException):
+			send_notifications(recipients, 
+						p.config_params_dict.get('smtp_server'), 
+						p.config_params_dict['smtp_port'],
+						ex.message,
+						error = True)
+		else:
+			# if it's not a samplesheet error, someone on the comp side should be fixing it, not the lab.
+			# In that case, just exit with code 1 and the cron process that called this script will send an email
+			# to the comp side
+			sys.exit(1)
 
 
 	# write the HTML output and create the delivery:
@@ -55,13 +68,14 @@ def process():
 
 	# send email to indicate processing is complete:
 	if recipients:
-		send_notifications(recipients, delivery_links, 
+		# compose the body text for the email
+		body_text = '<html><head></head><body><p>The following projects have completed processing and are available:</p>'
+		body_text += write_html_links(delivery_links, p.config_params_dict.get('external_url'), p.config_params_dict.get('delivery_home'))
+		body_text += '</body></html>'
+		send_notifications(recipients, 
 				p.config_params_dict.get('smtp_server'), 
 				p.config_params_dict.get('smtp_port'), 
-				p.config_params_dict.get('external_url'), 
-				p.config_params_dict.get('delivery_home'))
-
-
+				body_text)
 
 
 def parse_commandline_args():
@@ -116,16 +130,11 @@ def write_html_links(delivery_links, external_url, internal_drop_location):
 
 
 
-def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server_port, external_url, internal_drop_location):
+def send_notifications(recipients, smtp_server_name, smtp_server_port, body_text, error = False):
 	"""
 	Sends an email with the data links to addresses in the 'recipients' arg.
 	Note that the recipients arg is a comma-separated string parsed from the commandline
 	"""
-
-	# first, compose the message:
-	body_text = '<html><head></head><body><p>The following projects have completed processing and are available:</p>'
-	body_text += write_html_links(delivery_links, external_url, internal_drop_location)
-	body_text += '</body></html>'
 
 	# need a list of the email addresses:
 	address_list = recipients.split(',') # this is the ACTUAL list of emails to send to
@@ -135,7 +144,10 @@ def send_notifications(recipients, delivery_links, smtp_server_name, smtp_server
 	fromaddr = 'sequencer@cccb'
 
 	msg = MIMEMultipart('alternative')
-	msg['Subject'] = '[DEMUX] Data processing complete'
+	if error:
+		msg['Subject'] = '[DEMUX] SampleSheet error'
+	else:
+		msg['Subject'] = '[DEMUX] Data processing complete'
 	msg['From'] = fromaddr
 	msg['To'] = address_to_string
 

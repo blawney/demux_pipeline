@@ -97,9 +97,11 @@ def main(params):
 	# Detect new/unprocessed directories by looking at the set difference:
 	unprocessed_dirs = all_flowcell_dirs.difference(processed_flowcells)
 
-	subscribers = params.get('subscribers')
-	if isinstance(subscribers, str):
-		subscribers = [subscribers]
+	# have to handle whether the config file had a list of just a single item-- we ultimately need a list to pass to
+	# the notification/email methods, so have to convert strings to a single-item list.
+	converter = lambda x: [x] if isinstance(x, str) else x
+	subscribers = converter(params.get('subscribers'))
+	comp_subscribers = converter(params.get('comp_subscribers'))
 
 	for d in unprocessed_dirs:
 		progress_file = os.path.join(d, params.get('in_progress_file'))
@@ -108,12 +110,13 @@ def main(params):
 			args = ['-r', d, '-i', 'nextseq', '-e', ','.join(subscribers)]
 			command += ' '.join(args)
 			create_progress_file(progress_file, command)
+			os.chmod(progress_file, 0775)
 			process = subprocess.Popen(command, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 			stdout, stderr = process.communicate()
 			if process.returncode == 0:
 				processed_flowcells.add(d)
 			else:
-				send_error_email(subscribers, d, params.get('smtp_server'), params.get('smtp_port'))
+				send_error_email(comp_subscribers, d, params.get('smtp_server'), params.get('smtp_port'))
 			
 			
 	with open(CACHE, 'w') as cache_file:

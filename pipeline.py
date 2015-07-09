@@ -9,6 +9,10 @@ from ConfigParser import SafeConfigParser
 import subprocess
 
 
+class SampleSheetException(Exception):
+	pass
+
+
 def correct_permissions(directory):
 	"""
 	Gives write privileges to the biocomp group (if not already there)
@@ -269,12 +273,14 @@ class Pipeline(object):
 					try:
 						logging.info('Issuing system command: %s ' % call)
 						subprocess.check_call( call, shell = True )
-						os.chmod(merged_read_1_fastq, 0775)	
-						if paired:
-							os.chmod(merged_read_2_fastq, 0775)	
 					except subprocess.CalledProcessError:
 						logging.error('The concatentation of the lane-specific fastq files failed somehow')
 						sys.exit(1)
+
+				# change permissions on the final concatenated fastq files
+				os.chmod(merged_read_1_fastq, 0775)	
+				if paired:
+					os.chmod(merged_read_2_fastq, 0775)	
 
 
 	def merge_and_rename_fastq(self, sample_dir, read_num):
@@ -349,8 +355,14 @@ class NextSeqPipeline(Pipeline):
 		Pipeline.parse_config_file(self)
 		Pipeline.create_output_directory(self)
 
-		# parse out the projects and also do a check on the SampleSheet.csv to ensure the correct parameters have been entered
-		self.check_samplesheet()
+		try:
+			# parse out the projects and also do a check on the SampleSheet.csv to ensure the correct parameters have been entered
+			self.check_samplesheet()
+		except SampleSheetException as ex:
+			# rename the output directory inside the run directory (so it can run again)		
+			os.rename(self.config_params_dict['demux_output_dir'], os.path.join(self.run_directory_path, 'bcl2fastq_error'))
+			logging.error('Message: ' % ex.message)
+			raise ex
 
 		# actually start the demux process:
 		Pipeline.run_demux(self)
@@ -423,7 +435,7 @@ class NextSeqPipeline(Pipeline):
 				problem_lines = [i+1 for i,k in enumerate(lines_valid) if k == False]
 				logging.error('There was some problem with the SampleSheet.csv')
 				logging.error('Problem lines: %s' % problem_lines)
-				sys.exit(1)
+				raise SampleSheetException('Check lines (%s) for errors. ' % problem_lines)
 
 			# now get a list of all the projects that we are processing in this sampling run:
 			project_id_list = list(set([line.split(',')[6] for line in annotation_lines]))
