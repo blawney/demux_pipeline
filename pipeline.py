@@ -398,9 +398,13 @@ class NextSeqPipeline(Pipeline):
 			tests.append(pattern.match(elements[1]).group() == elements[1]) # if the greedy regex did not match the sample name, then something is wrong.
 			tests.append(elements[0].startswith(self.config_params_dict.get('sample_dir_prefix'))) # check that the Sample_ID field has the proper prefix
 			tests.append(elements[0][len(self.config_params_dict.get('sample_dir_prefix')):] == elements[1]) # check that the sample names match between the first and second fields
-			tests.append(len(elements[5]) == 7) # check that 7bp index was provided
+			#tests.append(len(elements[5]) == 7) # check that 7bp index was provided
 			tests.append(pattern.match(elements[6]).group() == elements[6]) # if the greedy regex did not match the full project designation then something is wrong.
-			return all(tests)
+			if all(tests):
+				return True
+			else:
+				logging.error('Line was not valid.  Boolean tests are as follows: %s' % tests)
+				return False
 		except Exception:
 			return False
 
