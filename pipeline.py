@@ -336,12 +336,18 @@ class Pipeline(object):
 			# double check that they are actually directories:
 			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
 
+			# the directories above are ALL the sample directories for this project.  
+			# We only have to worry about merging with older fastq files for the samples sequenced in the current run
+			samples_from_current_run = self.project_to_sample_map.get(project_id)
+
 			for sample_dir in sample_dirs:
-				logging.info('Looking for previous fastq files to merge with in directory: %s' % sample_dir)
-				self.merge_and_rename_fastq(sample_dir, 1)
-				if len(glob.glob(os.path.join(sample_dir, '*_R2_*.fastq.gz'))) > 0:
-					logging.info('Found paired fastq files to merge with as well in dir: %s' % sample_dir)
-					self.merge_and_rename_fastq(sample_dir, 2)
+				sample_name = os.path.basename(sample_dir)[len(self.config_params_dict.get('sample_dir_prefix')):]
+				if sample_name in samples_from_current_run:
+					logging.info('Looking for previous fastq files to merge with in directory: %s' % sample_dir)
+					self.merge_and_rename_fastq(sample_dir, 1)
+					if len(glob.glob(os.path.join(sample_dir, '*_R2_*.fastq.gz'))) > 0:
+						logging.info('Found paired fastq files to merge with as well in dir: %s' % sample_dir)
+						self.merge_and_rename_fastq(sample_dir, 2)
 
 
 
@@ -446,6 +452,22 @@ class NextSeqPipeline(Pipeline):
 
 			logging.info('The following projects were identified from the SampleSheet.csv: %s' % project_id_list)
 			self.project_id_list = project_id_list
+
+			# get the sample names for later use.  Put them into a map, keyed by the project id
+			sample_id_map = { p:[] for p in project_id_list }
+			for l in annotation_lines:
+				contents = l.split(',')
+				sample_id_map[contents[6]].append(contents[1])
+
+			# ensure that we have a unique set of samples for each project id:
+			for k, vals in sample_id_map.iteritems():
+				sample_id_map[k] = list(set(vals))
+
+			logging.info('The following projects and associated samples are:')
+			logging.info(sample_id_map)
+
+			self.project_to_sample_map = sample_id_map
+
 		else:
 			logging.error('Could not locate a SampleSheet.csv file in %s ' % self.run_directory_path)
 			sys.exit(1)
