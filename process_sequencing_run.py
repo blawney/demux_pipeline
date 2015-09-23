@@ -11,6 +11,7 @@ import datetime
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import subprocess
 
 # names of the machines for global reference:
 AVAILABLE_INSTRUMENTS = ['nextseq', 'hiseq']
@@ -86,6 +87,41 @@ def process():
 				p.config_params_dict.get('smtp_server'), 
 				p.config_params_dict.get('smtp_port'), 
 				body_text)
+
+
+	# kick off alignment processes, etc. for appropriately marked samples
+	for project_id, target in p.project_to_targets:
+		process, genome = target.split(':')
+		if process.lower() == 'rna':
+			run_rnaseq_pipeline(p, project_id, genome)
+
+
+
+
+def run_rnaseq_pipeline(p, project_id, genome):
+	"""
+	Pieces together the command to call out to the rnaseq pipeline.  That will perform an initial alignment, quantification, report, etc.
+	Does NOT do any differential expression testing- that can be started manually at a later time.
+	"""
+
+	project_directory = os.path.join(p.target_dir, project_id)
+	call = p.config_params_dict.get('rnaseq_pipeline_script')
+	args = []
+	args.append('run')
+	args.extend(['-d', project_directory])
+	args.extend(['-s', os.path.join(project_directory, p.config_params_dict.get('default_sample_listing_filename'))])
+	args.extend(['-o', os.path.join(project_directory, 'rnaseq_pipeline_output')])
+	args.extend(['-g', genome])
+	args.append('-skip_analysis')
+	arg_string = ' '.join(args)
+	cmd = call + ' ' + arg_string
+
+	logging.info('Call out to rna-seq pipeline script with: ')
+	logging.info(cmd)
+	process = subprocess.Popen(cmd, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+	stdout, stderr = process.communicate()
+	if process.returncode != 0:
+		logging.error('There was an error encountered during execution of the RNA-Seq pipeline for project %s ' % project_id)
 
 
 def parse_commandline_args():

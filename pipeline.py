@@ -47,7 +47,8 @@ class Pipeline(object):
 			self.config_params_dict = {}
 			for opt in parser.options(self.instrument):
 				value = parser.get(self.instrument, opt)
-				self.config_params_dict[opt] = value
+				value = tuple([v.strip() for v in value.split(',') if len(v.strip()) > 0])
+				self.config_params_dict[opt] = value[0] if len(value)==1 else value
 			logging.info('Parameters parsed from configuration file: ')
 			logging.info(self.config_params_dict)
 		else:
@@ -470,6 +471,12 @@ class NextSeqPipeline(Pipeline):
 			logging.info(sample_id_map)
 
 			self.project_to_sample_map = sample_id_map
+
+
+			# look for the tag which indicates that we should kickoff downstream processes:
+			# note that only one sample in a particular project needs to be marked (not every line in the SampleSheet)
+			project_to_targets = list(set([tuple(line.split(',')[6:8]) for line in annotation_lines]))
+			self.project_to_targets = [x for x in project_to_targets if x[1].split(':')[0].lower() in self.config_params_dict.get('downstream_targets')]
 
 		else:
 			logging.error('Could not locate a SampleSheet.csv file in %s ' % self.run_directory_path)
