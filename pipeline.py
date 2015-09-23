@@ -182,13 +182,16 @@ class Pipeline(object):
 		"""
 		logging.info('About to run fastQC...')
 		for project_id in self.project_id_list:
+			logging.info('FastQC for project ID: %s' % project_id)
 			project_dir = os.path.join(self.target_dir, project_id)
-			fastq_files = []
-			for root, dirs, files in os.walk(project_dir):
-				for f in files:
-					if f.lower().endswith(self.config_params_dict['final_fastq_tag'] + '.fastq.gz'):
-						fastq_files.append(os.path.join(root, f))
 
+			samples = self.project_to_sample_map[project_id]
+			fastq_files = []
+			for s in samples:
+				sample_dir = os.path.join(project_dir, self.config_params_dict.get('sample_dir_prefix') + s)
+				fastq_files.extend( [os.path.join(sample_dir, f) for f in os.listdir(sample_dir) if f.lower().endswith(self.config_params_dict['final_fastq_tag'] + '.fastq.gz')])
+
+			logging.info('Found these fastq files for this project: %s' % fastq_files)
 			for fq in fastq_files:
 				try:
 					call_command = self.config_params_dict['fastqc_path'] + ' ' + fq

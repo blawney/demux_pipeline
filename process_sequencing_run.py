@@ -59,6 +59,16 @@ def process():
 			sys.exit(1)
 
 
+	# prepares the sample annotation file which is used in downstream analysis processes
+	for project_id in p.project_id_list:
+		original_project_dir = os.path.join(p.target_dir, project_id)
+		sample_names = [s[len(p.config_params_dict.get('sample_dir_prefix')):] for s in os.listdir(original_project_dir) if s.startswith(p.config_params_dict.get('sample_dir_prefix'))]
+		sample_filepath = os.path.join(original_project_dir, p.config_params_dict.get('default_sample_listing_filename'))
+		with open(sample_filepath, 'w') as outfile:
+			# for each sample, write the name and a dash (as a dummy for the annotation group)
+			outfile.write('\n'.join(map(lambda x: str(x) + '\t-', sample_names)))
+
+
 	# write the HTML output and create the delivery:
 	delivery_links = publish(p.target_dir, 
 				p.project_id_list, 
