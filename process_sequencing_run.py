@@ -91,6 +91,7 @@ def process():
 
 	# kick off alignment processes, etc. for appropriately marked samples
 	for project_id, target in p.project_to_targets:
+		logging.info('Project %s was marked as having a downstream target to run: %s' % (project_id, target))
 		process, genome = target.split(':')
 		if process.lower() == 'rna':
 			run_rnaseq_pipeline(p, project_id, genome)
