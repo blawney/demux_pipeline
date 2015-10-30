@@ -398,7 +398,7 @@ class NextSeqPipeline(Pipeline):
 
 
 
-	def line_is_valid(self, line):
+	def line_is_valid(self, line, header_dict):
 		"""
 		Receives a sample annotation line from the Illumina-generated SampleSheet.csv and does some quick checks to see
 		that the Samplesheet.csv has the correct formatting for our pipelines.
@@ -411,11 +411,11 @@ class NextSeqPipeline(Pipeline):
 
 		try:
 			tests = []
-			tests.append(pattern.match(elements[1]).group() == elements[1]) # if the greedy regex did not match the sample name, then something is wrong.
-			tests.append(elements[0].startswith(self.config_params_dict.get('sample_dir_prefix'))) # check that the Sample_ID field has the proper prefix
-			tests.append(elements[0][len(self.config_params_dict.get('sample_dir_prefix')):] == elements[1]) # check that the sample names match between the first and second fields
+			tests.append(pattern.match(elements[header_dict['Sample_Name']]).group() == elements[header_dict['Sample_Name']]) # if the greedy regex did not match the sample name, then there is some character exception
+			tests.append(elements[header_dict['Sample_ID']].startswith(self.config_params_dict.get('sample_dir_prefix'))) # check that the Sample_ID field has the proper prefix
+			tests.append(elements[header_dict['Sample_ID']][len(self.config_params_dict.get('sample_dir_prefix')):] == elements[header_dict['Sample_Name']]) # check that the sample names match between the first and second fields
 			#tests.append(len(elements[5]) == 7) # check that 7bp index was provided
-			tests.append(pattern.match(elements[6]).group() == elements[6]) # if the greedy regex did not match the full project designation then something is wrong.
+			tests.append(pattern.match(elements[header_dict['Sample_Project']]).group() == elements[header_dict['Sample_Project']]) # if the greedy regex did not match the full project designation then something is wrong.
 			if all(tests):
 				return True
 			else:
@@ -444,13 +444,20 @@ class NextSeqPipeline(Pipeline):
 				logging.error('Could not find the [Data] section in the SampleSheet.csv file')
 				sys.exit(1)
 	 
+			line_list = [line.rstrip('\r') for line in sample_annotation_section.split('\n') if len(line)>0]
+
+			# in the case of dual-indexed SampleSheet.csv, should use the headers to locate the necessary fields to check (instead of using expected positioning on the line)
+			header_line = line_list[1]
+			header_dict = {s:p for p,s in enumerate(header_line.split(','))}
+
+
 			# this statement gets us a list, where each item in the list is the annotation line in the sample sheet.  
 			# The [2:] index removes the '[Data]' and the line with the field headers 
 			# Also strips off any Windows/Mac endline characters ('\r') if present
-			annotation_lines = [line.rstrip('\r') for line in sample_annotation_section.split('\n') if len(line)>0][2:]
+			annotation_lines = line_list[2:]
 
 			# a list of True/False on whether the sample annotation line is valid
-			lines_valid = [self.line_is_valid(line) for line in annotation_lines]
+			lines_valid = [self.line_is_valid(line, header_dict) for line in annotation_lines]
 			if not all(lines_valid):
 				problem_lines = [i+1 for i,k in enumerate(lines_valid) if k == False]
 				logging.error('There was some problem with the SampleSheet.csv')
@@ -458,7 +465,7 @@ class NextSeqPipeline(Pipeline):
 				raise SampleSheetException('Check lines (%s) for errors. ' % problem_lines)
 
 			# now get a list of all the projects that we are processing in this sampling run:
-			project_id_list = list(set([line.split(',')[6] for line in annotation_lines]))
+			project_id_list = list(set([line.split(',')[header_dict['Sample_Project']] for line in annotation_lines]))
 
 			logging.info('The following projects were identified from the SampleSheet.csv: %s' % project_id_list)
 			self.project_id_list = project_id_list
@@ -467,7 +474,7 @@ class NextSeqPipeline(Pipeline):
 			sample_id_map = { p:[] for p in project_id_list }
 			for l in annotation_lines:
 				contents = l.split(',')
-				sample_id_map[contents[6]].append(contents[1])
+				sample_id_map[contents[header_dict['Sample_Project']]].append(contents[header_dict['Sample_Name']])
 
 			# ensure that we have a unique set of samples for each project id:
 			for k, vals in sample_id_map.iteritems():
@@ -481,7 +488,12 @@ class NextSeqPipeline(Pipeline):
 
 			# look for the tag which indicates that we should kickoff downstream processes:
 			# note that only one sample in a particular project needs to be marked (not every line in the SampleSheet)
-			project_to_targets = list(set([tuple(line.split(',')[6:8]) for line in annotation_lines]))
+			s = set()
+			for line in annotation_lines:
+				contents = line.split(',')
+				s.add((contents[header_dict['Sample_Project']], contents[header_dict['Description']]))
+			
+			project_to_targets = list(s)
 			self.project_to_targets = [x for x in project_to_targets if x[1].split(':')[0].lower() in self.config_params_dict.get('downstream_targets')]
 			logging.info('From samplesheet, while looking for potential downstream tools to run: %s' % self.project_to_targets)
 
