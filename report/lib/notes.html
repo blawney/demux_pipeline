@@ -1,0 +1,72 @@
+<html>
+<style>
+	.code-block{
+		font-family:"Courier New", Courier,monospace;
+		background-color: #CFCFCF;
+		display: inline;
+	}
+</style>
+<h3>Some notes about the files:</h3>
+
+<p>
+This page contains links to FastQ files (raw sequencing reads with sequencing adapters and barcodes removed) and sequencing quality (FastQC) reports.  
+</p>
+
+<p>The FastQ-format files are gzip-compressed to save disk space and cannot be opened directly.  More information about the FastQC output 
+can be found at <a href="http://www.bioinformatics.babraham.ac.uk/projects/fastqc/">http://www.bioinformatics.babraham.ac.uk/projects/fastqc/</a>   
+</p>
+<p>
+
+<h4>About the FastQ files and naming conventions:</h4>
+For each sample there are several FastQ format files which are named like 
+<div class="code-block">
+&lt;Sample name&gt;_R&lt;Read number&gt;_.&lt;identifier&gt;.fastq.gz</div><br/>
+where the text inside the brackets are variable.  For instance, the file name <div class="code-block">XYZ_Control_R2_.final.fastq.gz</div> would denote:
+<ul>
+	<li>
+		Sample name: XYZ_Control
+	</li>
+	<li>
+		Read number: 2 (indicating the second reads in a paired-read experiment)
+	</li>
+	<li>
+		identifier: final (see explanation below)
+	</li>
+</ul>
+</p>
+<p>
+In a single-end protocol experiment, there will be only a single FastQ file for each sample (Read number: 1).
+If your samples were paired-end, there will be "R1" and "R2" files available.  They are sorted such that each line
+in the R1 file is paired with the same line in the R2 file.  Most sequence aligners require this (or an inter-weaved format) to perform the paired-end alignment.
+</p>
+<p>
+You will also find multiple fastQ files for the same sample, denoted by different "identifier" fields.  If you sequenced the same sample on multiple
+flowcells, you might see
+<div class="code-block">XYZ_Control_R1_.fc1.fastq.gz</div></br>
+<div class="code-block">XYZ_Control_R1_.fc2.fastq.gz</div></br>
+<div class="code-block">XYZ_Control_R1_.final.fastq.gz</div>
+</p>
+<p>Here, "fc1", "fc2", etc. stand for "flowcell 1", and so on.  The "final" file is the simple combination of all the individual "fc" files.
+The purpose of tagging the files in this way is to track potential batch effects.
+If the same sample is run on multiple flowcells, subsequent analysis might require taking this into account rather than simply combining the results of your experiments.  
+If this is not necessary, then you only need the file marked "final".
+<i>If your sample was run on a single flowcell, then the files marked "fc1" and "final" are, in fact, the same file.</i>  Only keep one of them to avoid unnecessary storage costs.</br>
+</p>
+
+<h4>About stranded RNA-Seq experiments:</h4>
+For stranded RNA-Seq kits (such as NEB Ultra-directional RNA) we note that the sequence reads contained in the FastQ files are the <u>reverse complement</u> of the mRNA transcript sequence.  
+The workflow diagram for the NEB kit (<a href="https://www.neb.com/products/e7420-nebnext-ultra-directional-rna-library-prep-kit-for-illumina" target="_blank">
+https://www.neb.com/products/e7420-nebnext-ultra-directional-rna-library-prep-kit-for-illumina</a>) 
+shows that the complement strand (colored gray) is ultimately amplified for sequencing, not the red mRNA transcript. <br/>  
+
+<p>
+Below, we show a screenshot from Broad's IGV software which shows that the sequenced reads mostly map in the anti-sense
+direction.  The left gene (THAP3) is transcribed left-to-right but the vast majority of the reads map right-to-left (blue color).  Conversely, the nearby gene DNAJC11 is transcribed
+from right-to-left, but the sequencing reads are mostly the reverse complement, mapping left-to-right (red color). </p> 
+
+For simple differential expression analyses, this should not affect the results, but it is important to be aware of the assumptions and expectations for any analysis or software you plan to use.  
+
+<p>
+<img src="stranded_rnaseq_igv.png" width="75%" style="padding-top:20px;">
+</p>
+</html>
