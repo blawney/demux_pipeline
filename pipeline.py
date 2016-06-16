@@ -230,6 +230,9 @@ class Pipeline(object):
 		to do this for both the R1 and R2 reads.
 		"""
 
+		# we want to keep track of where the original (lane-specific fastq files were kept), via a hierarchical dictionary:
+		self.lane_specific_fastq_mapping = {}
+
 		for project_id in self.project_id_list:
 
 			project_dir = os.path.join(self.config_params_dict.get('demux_output_dir'), project_id)
@@ -241,6 +244,8 @@ class Pipeline(object):
 			# double check that they are actually directories:
 			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
 
+			sample_to_lane_specific_fastq_map = {}
+
 			for sample_dir in sample_dirs:
 				# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 				sample_name_with_prefix = os.path.basename(sample_dir)
@@ -250,10 +255,15 @@ class Pipeline(object):
 				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R1_001.fastq.gz')))			
 				read_2_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R2_001.fastq.gz'))) # will be empty list [] if single-end protocol
 
+				# note that we use a list comprehension to effectively copy the read_1_fastq_files list
+				# otherwise, when we use the 'extend' method a few lines below, it modifies the original read_1_fastq_files list which is a side effect we do NOT want. 
+				sample_to_lane_specific_fastq_map[sample_name] = [rf for rf in read_1_fastq_files]
+
 				paired = False
 				if len(read_2_fastq_files) > 0:
 					paired = True
-
+					sample_to_lane_specific_fastq_map[sample_name].extend(read_2_fastq_files)
+ 
 				# need at least the read 1 files to continue
 				if len(read_1_fastq_files) == 0:
 					logging.error('Did not find any fastq files in %s directory.' % sample_dir)
@@ -277,6 +287,8 @@ class Pipeline(object):
 						call_list.append(write_call(read_2_fastq_files, merged_read_2_fastq))
 					else:
 						logging.error('Differing number of FASTQ files between R1 and R2')
+						logging.info('R1 files: %s' % read_1_fastq_files)
+						logging.info('R2 files: %s' % read_2_fastq_files)
 						sys.exit(1)
 
 				for call in call_list:
@@ -291,6 +303,10 @@ class Pipeline(object):
 				os.chmod(merged_read_1_fastq, 0775)	
 				if paired:
 					os.chmod(merged_read_2_fastq, 0775)	
+
+			# add that sample_to_lane_specific_fastq_map to the overall dictionary
+			self.lane_specific_fastq_mapping[project_id] = sample_to_lane_specific_fastq_map
+
 
 
 	def merge_and_rename_fastq(self, sample_dir, read_num):
@@ -355,7 +371,7 @@ class Pipeline(object):
 				if sample_name in samples_from_current_run:
 					logging.info('Looking for previous fastq files to merge with in directory: %s' % sample_dir)
 					self.merge_and_rename_fastq(sample_dir, 1)
-					if len(glob.glob(os.path.join(sample_dir, '*_R2_*.fastq.gz'))) > 0:
+					if len(glob.glob(os.path.join(sample_dir, '*_R2_.final.fastq.gz'))) > 0:
 						logging.info('Found paired fastq files to merge with as well in dir: %s' % sample_dir)
 						self.merge_and_rename_fastq(sample_dir, 2)
 
