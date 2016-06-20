@@ -272,6 +272,9 @@ class Pipeline(object):
 			# double check that they are actually directories:
 			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
 
+			# declare a lower-level dict to map the sample names (For a single project) to a list of filepaths
+			sample_to_lane_specific_fastq_map = {}
+
 			for sample_dir in sample_dirs:
 				# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
 				sample_name_with_prefix = os.path.basename(sample_dir)
@@ -337,6 +340,12 @@ class Pipeline(object):
 					shutil.move(fq, dest_dir)
 				# finally, chmod all those files:
 				correct_permissions(dest_dir)
+
+				# keep track of the file mapping
+				sample_to_lane_specific_fastq_map[sample_name] = [os.path.realpath(x) for x in glob.glob(os.path.join(dest_dir, sample_name + '*.fastq.gz'))]
+
+			# add the file mapping to the highest-level dict
+			self.lane_specific_fastq_mapping[project_id] = sample_to_lane_specific_fastq_map
 
 
 	def merge_and_rename_fastq(self, sample_dir, read_num):
