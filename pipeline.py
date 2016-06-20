@@ -135,6 +135,32 @@ class Pipeline(object):
 				logging.error('There was an issue creating a sample directory at %s' % sample_dir)
 				sys.exit(1)
 
+		# now create a directory (if it doesn't already exist) for the lane-specific fastq files.
+		# IF it exists (as for the case where the project encompasses multiple seq runs), make another subdirectory for this particular flowcell
+		# otherwise, create anew
+		try:
+			lane_specific_fastq_dir = os.path.join(new_project_dir, self.config_params_dict.get('lane_specific_fastq_directory'))
+			if os.path.isdir(lane_specific_fastq_dir):
+				# check for existing flowcell dirs (check that they are directories and follow the name convention)
+				existing_fc_dirs = sorted([x for x in os.listdir(lane_specific_fastq_dir) if os.path.isdir(os.path.join(lane_specific_fastq_dir,x)) and x.startswith(self.config_params_dict.get('flowcell_prefix'))])
+				final_fc_index = int(existing_fc_dirs[-1][len(self.config_params_dict.get('flowcell_prefix')):]) #strip the prefix and cast to an integer.  This is the largest index of existing directories
+				logging.info('There were existing flowcell subdirs (%s) in the lane-specific fastq directory at %s' % (existing_fc_dirs, lane_specific_fastq_dir))
+				fc_dir = os.path.join(lane_specific_fastq_dir, self.config_params_dict.get('flowcell_prefix') + str(final_fc_index + 1))
+				logging.info('Creating new flowcell directory for lane-specific fastq files at %s' % fc_dir)
+				os.mkdir(fc_dir)
+				correct_permissions(fc_dir)
+				self.flowcell_index = final_fc_index + 1
+			else:
+				# create a new dir
+				fc_dir = os.path.join(lane_specific_fastq_dir, self.config_params_dict.get('flowcell_prefix') + '1')
+				logging.info('No lane-specific fastq directories found.  Creating one for this flowcell at %s' % fc_dir)
+				os.makedirs(fc_dir)
+				correct_permissions(fc_dir)
+				self.flowcell_index = 1
+		except OSError as ex:
+			logging.error('There was an error, perhaps during creation of %s' % fc_dir)
+			sys.exit(1)
+
 
 	def create_final_locations(self):
 		"""
@@ -222,12 +248,14 @@ class Pipeline(object):
 		self.execute_call(call_command)
 
 
-	def concatenate_fastq_files(self):
+	def concatenate_and_move_fastq_files(self):
 		"""
 		This method scans the output and concatenates the fastq files for each sample and read number.
 		That is, the NextSeq output (in general) has a fastq file for each lane and sample and we need to 
 		concatenate the lane files into a single fastq file for that sample.  For paired-end protocol, need
 		to do this for both the R1 and R2 reads.
+
+		Also moves the lane-specific fastq files into the project directories, so the demux dirs can eventually be deleted
 		"""
 
 		# we want to keep track of where the original (lane-specific fastq files were kept), via a hierarchical dictionary:
@@ -238,13 +266,11 @@ class Pipeline(object):
 			project_dir = os.path.join(self.config_params_dict.get('demux_output_dir'), project_id)
 
 			# get the sample-specific subdirectories and append the path to the project directory in front (for full path name):
-			# this gives the fully qualified location of the original fastq files (by lane)
+			# this gives the fully qualified location of the original fastq files (which are given by lane)
 			sample_dirs = [os.path.join(project_dir, d) for d in os.listdir(project_dir) if d.startswith(self.config_params_dict.get('sample_dir_prefix'))] 
 
 			# double check that they are actually directories:
 			sample_dirs = filter( lambda x: os.path.isdir(x), sample_dirs)
-
-			sample_to_lane_specific_fastq_map = {}
 
 			for sample_dir in sample_dirs:
 				# since bcl2fastq2 renames the fastq files with a different scheme, extract the sample name we want via parsing the directory name
@@ -255,15 +281,10 @@ class Pipeline(object):
 				read_1_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R1_001.fastq.gz')))			
 				read_2_fastq_files = sorted(glob.glob(os.path.join(sample_dir, '*R2_001.fastq.gz'))) # will be empty list [] if single-end protocol
 
-				# note that we use a list comprehension to effectively copy the read_1_fastq_files list
-				# otherwise, when we use the 'extend' method a few lines below, it modifies the original read_1_fastq_files list which is a side effect we do NOT want. 
-				sample_to_lane_specific_fastq_map[sample_name] = [rf for rf in read_1_fastq_files]
-
 				paired = False
 				if len(read_2_fastq_files) > 0:
 					paired = True
-					sample_to_lane_specific_fastq_map[sample_name].extend(read_2_fastq_files)
- 
+
 				# need at least the read 1 files to continue
 				if len(read_1_fastq_files) == 0:
 					logging.error('Did not find any fastq files in %s directory.' % sample_dir)
@@ -295,8 +316,12 @@ class Pipeline(object):
 					try:
 						logging.info('Issuing system command: %s ' % call)
 						subprocess.check_call( call, shell = True )
+						logging.info('Completed concatenation for %s' % sample_name)
 					except subprocess.CalledProcessError:
 						logging.error('The concatentation of the lane-specific fastq files failed somehow')
+						sys.exit(1)
+					except Exception as ex:
+						logging.error(ex.message)
 						sys.exit(1)
 
 				# change permissions on the final concatenated fastq files
@@ -304,9 +329,14 @@ class Pipeline(object):
 				if paired:
 					os.chmod(merged_read_2_fastq, 0775)	
 
-			# add that sample_to_lane_specific_fastq_map to the overall dictionary
-			self.lane_specific_fastq_mapping[project_id] = sample_to_lane_specific_fastq_map
-
+				# finally, relocate the lane-specific fastq files to the project directory so we don't risk losing that level of data when
+				# we delete the flowcell/demux folders
+				dest_dir = os.path.join(self.target_dir, project_id, self.config_params_dict.get('lane_specific_fastq_directory'), self.config_params_dict.get('flowcell_prefix') + str(self.flowcell_index))
+				for fq in read_1_fastq_files + read_2_fastq_files:
+					logging.info('Moving %s to %s' % (fq, dest_dir))
+					shutil.move(fq, dest_dir)
+				# finally, chmod all those files:
+				correct_permissions(dest_dir)
 
 
 	def merge_and_rename_fastq(self, sample_dir, read_num):
@@ -325,8 +355,8 @@ class Pipeline(object):
 			# concatenate the existing final fastq with the new one.  Dump the result into a temp file and then rename the tempfile
 
 			# first, rename the fastq file from this demux process to indicate which 'run' it came from
-			j = len(glob.glob(os.path.join(sample_dir, sample_name + '_R' + k +"_.fc[0-9]*.fastq.gz")))
-			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.fc' + str(j+1) + '.fastq.gz')
+			j = len(glob.glob(os.path.join(sample_dir, sample_name + '_R' + k +"_." + self.config_params_dict.get('flowcell_prefix') + "[0-9]*.fastq.gz")))
+			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.' + self.config_params_dict.get('flowcell_prefix') + str(j+1) + '.fastq.gz')
 			logging.info('Renaming: %s ---> %s' % (new_read_fastq, run_specific_fq))
 			os.rename(new_read_fastq, run_specific_fq)  
 
@@ -342,7 +372,7 @@ class Pipeline(object):
 			logging.info('No previous fastq files for this sample were found.  Renaming to reflect which run it came from, and symlinking the final fastq')
 			# an existing 'final' fastq file does not exist- simply create a symlink.  This way we retain the original fastq file from each run for the sample.  Renaming
 			# would cause us to lose track of which fastq file corresponds to which run
-			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.fc1.fastq.gz')
+			run_specific_fq = os.path.join(sample_dir, sample_name + '_R'+ k +'_.'+ self.config_params_dict.get('flowcell_prefix') + '1.fastq.gz')
 			logging.info('Renaming: %s ---> %s' % (new_read_fastq, run_specific_fq))
 			os.rename(new_read_fastq, run_specific_fq)  
 			logging.info('Linking: %s will point at ---> %s' % (existing_read_k_fastq, run_specific_fq))
@@ -403,7 +433,7 @@ class NextSeqPipeline(Pipeline):
 		Pipeline.create_final_locations(self)
 
 		# the NextSeq has each sample in multiple lanes- concat those
-		Pipeline.concatenate_fastq_files(self)
+		Pipeline.concatenate_and_move_fastq_files(self)
 
 		# handle concatenation of these new fastq files with those that may already exist (in the case of same sample on multiple flowcells)
 		logging.info('try merge')
@@ -542,7 +572,7 @@ class HiSeqPipeline(Pipeline):
 		Pipeline.create_final_locations(self)
 
 		# the NextSeq has each sample in multiple lanes- concat those
-		Pipeline.concatenate_fastq_files(self)
+		Pipeline.concatenate_and_move_fastq_files(self)
 	
 		# run the fastQC process:
 		Pipeline.run_fastqc(self)
