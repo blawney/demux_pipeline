@@ -148,14 +148,12 @@ class Pipeline(object):
 				fc_dir = os.path.join(lane_specific_fastq_dir, self.config_params_dict.get('flowcell_prefix') + str(final_fc_index + 1))
 				logging.info('Creating new flowcell directory for lane-specific fastq files at %s' % fc_dir)
 				os.mkdir(fc_dir)
-				correct_permissions(fc_dir)
 				self.flowcell_index = final_fc_index + 1
 			else:
 				# create a new dir
 				fc_dir = os.path.join(lane_specific_fastq_dir, self.config_params_dict.get('flowcell_prefix') + '1')
 				logging.info('No lane-specific fastq directories found.  Creating one for this flowcell at %s' % fc_dir)
 				os.makedirs(fc_dir)
-				correct_permissions(fc_dir)
 				self.flowcell_index = 1
 		except OSError as ex:
 			logging.error('There was an error, perhaps during creation of %s' % fc_dir)
@@ -336,10 +334,14 @@ class Pipeline(object):
 				# we delete the flowcell/demux folders
 				dest_dir = os.path.join(self.target_dir, project_id, self.config_params_dict.get('lane_specific_fastq_directory'), self.config_params_dict.get('flowcell_prefix') + str(self.flowcell_index))
 				for fq in read_1_fastq_files + read_2_fastq_files:
-					logging.info('Moving %s to %s' % (fq, dest_dir))
-					shutil.move(fq, dest_dir)
-				# finally, chmod all those files:
-				correct_permissions(dest_dir)
+					# since bcl2fastq will change underscores to dashes (and potentially other side-effects), we will rename the
+					# lane-specific files as we move them.
+
+					suffix = re.findall(r'_L00\d_R\d_001.fastq.gz', os.path.basename(fq))[0]
+					new_name = sample_name + suffix
+					destination_path = os.path.join(dest_dir, new_name)
+					logging.info('Moving %s to %s' % (fq, destination_path))
+					shutil.move(fq, destination_path)
 
 				# keep track of the file mapping
 				sample_to_lane_specific_fastq_map[sample_name] = [os.path.realpath(x) for x in glob.glob(os.path.join(dest_dir, sample_name + '*.fastq.gz'))]
