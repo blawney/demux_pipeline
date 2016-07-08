@@ -412,7 +412,7 @@ class Pipeline(object):
 				if sample_name in samples_from_current_run:
 					logging.info('Looking for previous fastq files to merge with in directory: %s' % sample_dir)
 					self.merge_and_rename_fastq(sample_dir, 1)
-					if len(glob.glob(os.path.join(sample_dir, '_R2_.' + self.config_params_dict.get('tmp_fastq_tag') + '.fastq.gz'))) > 0:
+					if len(glob.glob(os.path.join(sample_dir, '*_R2_.' + self.config_params_dict.get('tmp_fastq_tag') + '.fastq.gz'))) > 0:
 						logging.info('Found paired fastq files to merge with as well in dir: %s' % sample_dir)
 						self.merge_and_rename_fastq(sample_dir, 2)
 
