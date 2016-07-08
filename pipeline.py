@@ -126,13 +126,13 @@ class Pipeline(object):
 				sample_dir = os.path.join(new_project_dir, sample_dir)
 				os.mkdir(sample_dir)
 				logging.info('Created sample directory at %s' % sample_dir)
-			# change the permissions for everything underneath this new directory (including the sample-specific directories)
-			correct_permissions(new_project_dir)
+				correct_permissions(sample_dir)
 		except OSError as ex:
 			if ex.errno == 17: # directory was already there
 				logging.warning('Sample directory at %s was already present.  Generally this should not occur, so something could be wrong.  However, if the same sample we sequenced in two or more different runs, then this is expected.  Not exiting, but check this over.' % sample_dir)
 			else:
 				logging.error('There was an issue creating a sample directory at %s' % sample_dir)
+				logging.error('Exception: %s' % ex.message)
 				sys.exit(1)
 
 		# now create a directory (if it doesn't already exist) for the lane-specific fastq files.
