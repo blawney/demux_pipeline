@@ -72,7 +72,7 @@ def process():
 
 	# also write out the projec to lane-specific mapping lane_specific_fastq_mapping
 	fastq_mapping_filepath = os.path.join(original_project_dir, p.config_params_dict.get('fastq_lane_map_file'))
-	with open(fastq_mapping_filepath, 'w') as outfile:
+	with open(fastq_mapping_filepath, 'a') as outfile:
 		project_mapping = p.lane_specific_fastq_mapping[project_id] # this gets a map of sample names pointing at lists of lane-specific fastq files
 		for sample in project_mapping.keys():
 			outfile.write('\n'.join([sample + '\t' + x for x in project_mapping[sample]]))
