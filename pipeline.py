@@ -114,6 +114,7 @@ class Pipeline(object):
 		new_project_dir = os.path.join(self.target_dir, project_id)
 		try:
 			os.mkdir(new_project_dir)
+			os.chmod(new_project_dir, 0775)
 			logging.info('Created directory for project %s at %s' % (project_id, new_project_dir))
 		except OSError as ex:
 			if ex.errno == 17: # directory was already there
