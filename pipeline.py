@@ -13,6 +13,10 @@ class SampleSheetException(Exception):
 	pass
 
 
+class MissingContactException(Exception):
+	pass
+
+
 def correct_permissions(directory):
 	"""
 	Gives write privileges to the biocomp group (if not already there)
@@ -419,6 +423,18 @@ class Pipeline(object):
 
 
 
+	def write_project_descriptor(self):
+		for project_id in self.project_to_email_mapping.keys():
+			project_dir = os.path.join(self.target_dir, project_id)
+			descriptor_filepath = os.path.join(project_dir, self.config_params_dict['project_descriptor'])
+			with open(descriptor_filepath, 'w') as fout:
+				d = {}
+				d['project_id'] = project_id
+				d['client_emails'] = self.project_to_email_mapping[project_id]
+				json.dump(d, fout)
+		
+
+
 class NextSeqPipeline(Pipeline):
 	
 	def __init__(self, run_directory_path):
@@ -454,6 +470,9 @@ class NextSeqPipeline(Pipeline):
 		# run the fastQC process:
 		Pipeline.run_fastqc(self)
 
+		# write a project descriptor file, which can be used by other processes
+		Pipeline.write_project_descriptor(self)
+
 
 
 	def line_is_valid(self, line, header_dict):
@@ -487,12 +506,35 @@ class NextSeqPipeline(Pipeline):
 	def check_samplesheet(self):
 		"""
 		This method checks for a samplesheet and does a quick check that it is formatted within guidelines (described elsewhere)
-		Returns a list of the Project identifiers.
 		"""
 		samplesheet_path = os.path.join(self.run_directory_path, 'SampleSheet.csv')
 		logging.info('Examining samplesheet at: %s' % samplesheet_path)
 
 		if os.path.isfile(samplesheet_path):
+
+			# the following regex extracts the Header section, which is started by '[Header]'
+			# and continues until it reaches another section (or the end of the file)
+			# re.findall() returns a list-- get the first element
+			try:
+				header_section = re.findall(r'\[Header\][^\[]*', open(samplesheet_path).read())[0]
+				logging.info('header: %s' % header_section)
+			except IndexError:
+				logging.error('Could not find the [Header] section in the file: %s' % samplesheet_path)
+				sys.exit(1)
+
+			line_list = [line.rstrip('\r') for line in header_section.split('\n') if len(line)>0]
+			project_to_email_mapping = {}
+			for line in line_list:
+				if line.startswith('Email'):
+					contents = line.split(',')
+					project_id = contents[1].strip()
+					emails = [x.strip() for x in contents[2:] if len(x) > 0]
+					project_to_email_mapping[project_id] = emails
+			logging.info('Contacts from sampleSheet: %s' % project_to_email_mapping)
+			self.project_to_email_mapping = project_to_email_mapping
+			if len(project_to_email_mapping.keys()) == 0:
+				raise MissingContactException('No contacts parsed for samplesheet: %s' % samplesheet_path)
+
 			# the following regex extracts the sample annotation section, which is started by '[Data]'
 			# and continues until it reaches another section (or the end of the file)
 			# re.findall() returns a list-- get the first element
