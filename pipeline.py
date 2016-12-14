@@ -3,6 +3,7 @@ import sys
 import re
 import glob
 import shutil
+import json
 import logging
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
@@ -428,12 +429,15 @@ class Pipeline(object):
 			project_dir = os.path.join(self.target_dir, project_id)
 			descriptor_filepath = os.path.join(project_dir, self.config_params_dict['project_descriptor'])
 			with open(descriptor_filepath, 'w') as fout:
+				logging.info('Writing project descriptor to %s' % descriptor_filepath)
 				d = {}
 				d['project_id'] = project_id
 				d['client_emails'] = self.project_to_email_mapping[project_id]
+				logging.info('Descriptor contents: %s' % d)
 				json.dump(d, fout)
-		
-
+				logging.info('Done writing to json file')
+			logging.info('file closed, moving onto next project')
+		logging.info('completed projects')
 
 class NextSeqPipeline(Pipeline):
 	
