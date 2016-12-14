@@ -611,7 +611,7 @@ class NextSeqPipeline(Pipeline):
 					
 
 class HiSeqPipeline(Pipeline):
-	
+	#TODO:  Update if HiSeq is used again.  Since decommission, all development/changes have focused on the parent (Pipeline) and the derived NextSeq child.	
 	def __init__(self, run_directory_path):
 		self.run_directory_path = run_directory_path
 		self.instrument = 'hiseq'

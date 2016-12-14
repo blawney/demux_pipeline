@@ -38,6 +38,7 @@ def process():
 	if instrument == 'nextseq':
 		p = pipeline.NextSeqPipeline(run_directory_path)
 	elif instrument == 'hiseq':
+		logging.warning('HiSeq processing could be out of date due to decommission.')
 		p = pipeline.HiSeqPipeline(run_directory_path)
 	else:
 		logging.error('Processing logic not implemented for this instrument.  Exiting')
