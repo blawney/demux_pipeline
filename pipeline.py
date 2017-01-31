@@ -425,6 +425,7 @@ class Pipeline(object):
 
 
 	def write_project_descriptor(self):
+		logging.info('Starting writing of project descriptor file(s)')
 		for project_id in self.project_to_email_mapping.keys():
 			project_dir = os.path.join(self.target_dir, project_id)
 			descriptor_filepath = os.path.join(project_dir, self.config_params_dict['project_descriptor'])
@@ -609,62 +610,6 @@ class NextSeqPipeline(Pipeline):
 
 
 					
-
-class HiSeqPipeline(Pipeline):
-	#TODO:  Update if HiSeq is used again.  Since decommission, all development/changes have focused on the parent (Pipeline) and the derived NextSeq child.	
-	def __init__(self, run_directory_path):
-		self.run_directory_path = run_directory_path
-		self.instrument = 'hiseq'
-
-	def run(self):
-		Pipeline.parse_config_file(self)
-		Pipeline.create_output_directory(self)
-
-		# parse out the projects and also do a check on the SampleSheet.csv to ensure the correct parameters have been entered
-		self.check_samplesheet()
-
-		# actually start the demux process:
-		Pipeline.run_demux(self)
-	
-		# sets up the directory structure for the final, merged fastq files.
-		Pipeline.create_final_locations(self)
-
-		# the NextSeq has each sample in multiple lanes- concat those
-		Pipeline.concatenate_and_move_fastq_files(self)
-	
-		# run the fastQC process:
-		Pipeline.run_fastqc(self)
-
-
-	def check_samplesheet(self):
-		"""
-		This method checks for a samplesheet and does a quick check that it is formatted within guidelines (described elsewhere)
-		"""
-
-		samplesheet_path = os.path.join(self.run_directory_path, 'SampleSheet.csv')
-		logging.info('Examining samplesheet at: %s' % samplesheet_path)
-		if os.path.isfile(samplesheet_path):
-			# the following regex extracts the sample annotation section, which is started by '[Data]'
-			# and continues until it reaches another section (or the end of the file)
-			# re.findall() returns a list-- get the first element
-			try:
-				sample_annotation_section = re.findall(r'\[Data\][^\[]*', open(samplesheet_path).read())[0]
-			except IndexError:
-				logging.error('Could not find the [Data] section in the SampleSheet.csv file')
-				sys.exit(1)
-
-			# this statement gets us a list, where each item in the list is the annotation line in the sample sheet.
-			# The [2:] index removes the '[Data]' and the line with the field headers
-			# Also strips off any Windows/Mac endline characters ('\r') if present
-			annotation_lines = [line.rstrip('\r') for line in sample_annotation_section.split('\n') if len(line)>0][2:]
-
-			# now get a list of all the projects that we are processing in this sampling run:
-			project_id_list = list(set([line.split(',')[7] for line in annotation_lines]))
-			logging.info('The following projects were identified from the SampleSheet.csv: %s' % project_id_list)
-			self.project_id_list = project_id_list
-		else:
-			logging.error('Could not locate a SampleSheet.csv file in %s ' % self.run_directory_path)
-			sys.exit(1)
 	
 
 
