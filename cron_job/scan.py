@@ -1,4 +1,4 @@
-#!/cccbstore-rc/projects/cccb/apps/python27/bin/python
+#!/ifs/labs/cccb/projects/cccb/pipelines/demux_pipeline_current/venv/bin/python
 
 import os
 import sys
