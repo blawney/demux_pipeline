@@ -8,7 +8,7 @@ import logging
 from datetime import datetime as date
 from ConfigParser import SafeConfigParser
 import subprocess
-
+import demux_cloud_upload
 
 class SampleSheetException(Exception):
 	pass
@@ -440,6 +440,25 @@ class Pipeline(object):
 			logging.info('file closed, moving onto next project')
 		logging.info('completed projects')
 
+
+	def upload_to_remote(self):
+		logging.info('About to upload to cloud storage')
+		for project_id in self.project_to_email_mapping.keys():
+			project_dir = os.path.join(self.target_dir, project_id)
+			logging.info('Uploading project directory at: %s' % project_dir)
+			attempt = 0
+			logging.info('Max attempts: %s' % int(self.config_params_dict['max_cloud_upload_attempts']))
+			while attempt < int(self.config_params_dict['max_cloud_upload_attempts']):
+				logging.info('Upload attempt %s' % (attempt + 1))
+				try:
+					demux_cloud_upload.entry_method(project_dir, self.config_params_dict)
+					break
+				except Exception as ex:
+					logging.error('Cloud upload attempt %s failed.' % (attempt + 1))
+					logging.error('Exception message: %s' % ex.message)
+					attempt += 1
+
+
 class NextSeqPipeline(Pipeline):
 	
 	def __init__(self, run_directory_path):
@@ -477,7 +496,8 @@ class NextSeqPipeline(Pipeline):
 
 		# write a project descriptor file, which can be used by other processes
 		Pipeline.write_project_descriptor(self)
-
+		
+		Pipeline.upload_to_remote(self)
 
 
 	def line_is_valid(self, line, header_dict):
