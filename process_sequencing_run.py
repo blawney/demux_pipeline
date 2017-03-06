@@ -37,9 +37,6 @@ def process():
 
 	if instrument == 'nextseq':
 		p = pipeline.NextSeqPipeline(run_directory_path)
-	elif instrument == 'hiseq':
-		logging.warning('HiSeq processing could be out of date due to decommission.')
-		p = pipeline.HiSeqPipeline(run_directory_path)
 	else:
 		logging.error('Processing logic not implemented for this instrument.  Exiting')
 		sys.exit(1)
@@ -60,7 +57,7 @@ def process():
 			# to the comp side
 			sys.exit(1)
 
-
+	# Now the demux is finished- perform some extra tasks for making analysis, etc. easier
 	# prepares the sample annotation file which is used in downstream analysis processes
 	for project_id in p.project_id_list:
 		original_project_dir = os.path.join(p.target_dir, project_id)
@@ -98,43 +95,6 @@ def process():
 				p.config_params_dict.get('smtp_port'), 
 				body_text)
 
-
-	# kick off alignment processes, etc. for appropriately marked samples
-	for project_id, target in p.project_to_targets:
-		logging.info('Project %s was marked as having a downstream target to run: %s' % (project_id, target))
-		process, genome = target.split(':')
-		if process.lower() == 'rna':
-			run_rnaseq_pipeline(p, project_id, genome)
-
-
-
-
-def run_rnaseq_pipeline(p, project_id, genome):
-	"""
-	Pieces together the command to call out to the rnaseq pipeline.  That will perform an initial alignment, quantification, report, etc.
-	Does NOT do any differential expression testing- that can be started manually at a later time.
-	"""
-
-	project_directory = os.path.join(p.target_dir, project_id)
-	call = p.config_params_dict.get('rnaseq_pipeline_script')
-	args = []
-	args.append('run')
-	args.extend(['-d', project_directory])
-	args.extend(['-s', os.path.join(project_directory, p.config_params_dict.get('default_sample_listing_filename'))])
-	args.extend(['-o', os.path.join(project_directory, 'rnaseq_pipeline_output')])
-	args.extend(['-g', genome])
-	args.append('-skip_analysis')
-	arg_string = ' '.join(args)
-	cmd = call + ' ' + arg_string
-
-	logging.info('Call out to rna-seq pipeline script with: ')
-	logging.info(cmd)
-	process = subprocess.Popen(cmd, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-	stdout, stderr = process.communicate()
-	if process.returncode != 0:
-		logging.error('There was an error encountered during execution of the RNA-Seq pipeline for project %s ' % project_id)
-
-
 def parse_commandline_args():
 	"""
 	This method parses the commandline arguments and returns a tuple of the passed args
@@ -167,8 +127,6 @@ def parse_commandline_args():
 
 	args = parser.parse_args()
 	return (args.run_directory, args.recipients, args.instrument, args.log_dir)
-
-
 
 
 def write_html_links(delivery_links, external_url, internal_drop_location):
