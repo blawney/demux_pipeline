@@ -9,9 +9,22 @@ from libcloud.utils.py3 import urlquote
 import re
 import glob
 import logging
+import subprocess
 
 class InvalidBucketName(Exception):
 	pass
+
+class MockObject(object):
+	"""
+	When I initially wrote this module, I had libcloud doing the uploads.  That kept failing, so we decided to 
+	switch to gsutil utilities.  When we upload via gsutil we do NOT get back a google storage "object" instance
+	representing the uploaded object.  Other functions call attributes on those (e.g. uploaded_object.name).  
+
+	To avoid rewriting those working functions, simply make a wrapper object which has the 'name' attribute
+	For each file uploaded via gsutil, create an instance of this class, giving it the proper name.
+	"""
+	def __init__(self, name):
+		self.name = name
 
 def read_credentials(credential_file):
 	logging.info('Read credential file at %s' % credential_file)
@@ -118,6 +131,55 @@ def collect_files(project_dir, filetype, params):
 	filetype = params[filetype]
 	return glob.glob(os.path.join(project_dir, '%s*' % params['sample_dir_prefix'],'*%s' % filetype)) # project_dir is the path on OUR local filesystem
 	
+def upload_fastq_dir(upload_items, project_dir, container, root_location, params):
+	"""
+	We can symlink the 'final' fastq files from a single location and use gsutil's rsync functionality to send them up
+	"""
+	# first symlink all the necessary files
+	#TODO check that this does or does not exist first
+	try:
+		final_symlinked_directory = os.path.join(project_dir, params['final_symlinked_fastq_directory'])
+		os.mkdir(final_symlinked_directory)
+	except OSError as ex:
+		if ex.errno == 17:
+			logging.info('The symlink fastq directory already existed at %s' % final_symlinked_directory)
+			pass
+		else:
+			logging.error('Exception thrown when making symlinked fastq directory: %s' % ex.message)
+			raise ex
+
+	for item in upload_items:
+		try:
+			basename = os.path.basename(item)
+			os.symlink(item, os.path.join(final_symlinked_directory, basename))
+		except OSError as ex:
+			if ex.errno == 17:
+				logging.info('A symlink for %s fastq already existed' % basename)
+				pass
+			else:
+				logging.error('Exception thrown when linking fastq file: %s' % ex.message)
+				raise ex
+		
+	# now upload using gsutil rsync
+	rsync_cmd = 'gsutil rsync -r %s gs://%s/%s' % (final_symlinked_directory, container.name, root_location)
+	logging.info('Issue system command for uploading fastq files: %s' % rsync_cmd)
+	process = subprocess.Popen(rsync_cmd, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+	stdout, stderr = process.communicate()
+	logging.info('STDOUT from gsutil fastq upload: ')
+	logging.info(stdout)
+	logging.info('STDERR from gsutil fastq upload: ')
+	logging.info(stderr)
+	if process.returncode != 0:
+		logging.error('There was an error while uploading with gsutil.  Check the logs.')
+		raise Exception('Error during gsutil upload module.')
+	else:
+		uploaded_objects = []
+		for item in upload_items:
+			basename = os.path.basename(item)
+			object_name = os.path.join(root_location, basename)
+			uploaded_objects.append(MockObject(object_name))
+	return uploaded_objects
+	
 
 def upload(upload_items, container, root_location, params):
 	"""
@@ -147,8 +209,19 @@ def upload(upload_items, container, root_location, params):
 							upload_name = os.path.join( root_location, sample_and_read_fastQC_dir, sample_and_read_id + 'html' )
 							#upload_name = upload_name[:-len(params['gcloud_edit_suffix'])]
 							extra = {'content_type': 'text/html'}
-						uploaded_objects.append(container.upload_object(fp, upload_name, extra=extra))
-						logging.info('Upload %s to %s' % (fp, upload_name))
+						upload_cmd = 'gsutil -h "Content-Type:text/html" cp %s gs://%s/%s' % (fp, container.name, upload_name)
+						logging.info('Issuing the following system command: %s' % upload_cmd)
+						process = subprocess.Popen(upload_cmd, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+						stdout, stderr = process.communicate()
+						logging.info('STDOUT from gsutil upload: ')
+						logging.info(stdout)
+						logging.info('STDERR from gsutil upload: ')
+						logging.info(stderr)
+						if process.returncode != 0:
+							logging.error('There was an error while uploading with gsutil.  Check the logs.')
+							raise Exception('Error during gsutil upload module.')
+						else:
+							uploaded_objects.append(MockObject(upload_name))
 		else:
 			uploaded_objects.append(container.upload_object(resource, os.path.join(root_location,  os.path.basename(resource))))
 			logging.info('Upload %s to %s' % (resource, os.path.join(root_location,  os.path.basename(resource))))
@@ -257,15 +330,17 @@ def entry_method(project_dir, params):
 	
 	# do uploads
 	uploaded_objects = []
-	uploaded_objects.extend(upload(fastq_files, bucket_obj, params['cloud_fastq_root'], params))
+	uploaded_objects.extend(upload_fastq_dir(fastq_files, project_dir, bucket_obj, params['cloud_fastq_root'], params))
+	#uploaded_objects.extend(upload(fastq_files, bucket_obj, params['cloud_fastq_root'], params))
 	uploaded_objects.extend(upload(fastQC_dirs, bucket_obj, params['cloud_fastqc_root'], params))
 
 	# give permissions:
 	give_permissions(driver, bucket_obj, uploaded_objects, gmail_addresses)
 
 	# get the total upload size
-	upload_size = calculate_upload_size(uploaded_objects)
-	logging.info('upload size in GB: %s' % upload_size)
+	# commented out since using rsync
+	#upload_size = calculate_upload_size(uploaded_objects)
+	#logging.info('upload size in GB: %s' % upload_size)
 
 	# upload the metadata file:
 	upload([os.path.join(project_dir, params['project_descriptor']),], bucket_obj, '', params)	

@@ -38,6 +38,10 @@ def send_error_email(subscribers, flowcell_directory, server, port):
 
 
 def parse_vals(val_string):
+	"""
+	Helps with parsing lines from the config file.  Returns a single string or a list of strings depending on 
+	the presence of commas
+	"""
 	vals = val_string.split(',')
 	if len(vals) > 1:
 		return [v.strip() for v in vals]
@@ -47,7 +51,7 @@ def parse_vals(val_string):
 
 def parse_config():
 	"""
-	This function finds and parses a configuration file, which contains various constants to run this pipeline
+	This function finds and parses a configuration file, which contains various parameters/constants to run this pipeline
 	"""
 	current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
 	cfg_files = [os.path.join(current_dir, f) for f in os.listdir(current_dir) if f.endswith('cfg')]
@@ -62,6 +66,9 @@ def parse_config():
 
 
 def create_progress_file(f, command):
+	"""
+	Writes a time-stamp and the demux process call into a file f
+	"""
 	with open(f, 'a') as out:
 		out.write('Started at %s \n' % datetime.datetime.now().strftime("%Y%m%d_%H%M"))
 		out.write(command)
@@ -123,7 +130,6 @@ def main(params):
 		cache_file.write('\n'.join(processed_flowcells))
 
 		
-
 if __name__ == '__main__':
 	config_params = parse_config()
 	main(config_params)

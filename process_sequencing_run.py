@@ -14,7 +14,7 @@ from email.mime.text import MIMEText
 import subprocess
 
 # names of the machines for global reference:
-AVAILABLE_INSTRUMENTS = ['nextseq', 'hiseq']
+AVAILABLE_INSTRUMENTS = ['nextseq',]
 
 
 def process():

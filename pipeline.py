@@ -626,17 +626,3 @@ class NextSeqPipeline(Pipeline):
 			logging.error('Could not locate a SampleSheet.csv file in %s ' % self.run_directory_path)
 			sys.exit(1)
 
-
-
-
-					
-	
-
-
-
-
-
-
-
-
-
