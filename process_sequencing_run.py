@@ -1,4 +1,4 @@
-#!/ifs/labs/cccb/projects/cccb/pipelines/demux_pipeline_current/venv/bin/python
+#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/venv/bin/python
 
 import logging
 import os
@@ -12,6 +12,8 @@ import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import subprocess
+import cloud_delivery_tracking
+import utils
 
 # names of the machines for global reference:
 AVAILABLE_INSTRUMENTS = ['nextseq',]
@@ -90,10 +92,15 @@ def process():
 		body_text = '<html><head></head><body><p>The following projects have completed processing and are available:</p>'
 		body_text += write_html_links(delivery_links, p.config_params_dict.get('external_url'), p.config_params_dict.get('delivery_home'))
 		body_text += '</body></html>'
-		send_notifications(recipients, 
+		utils.send_notifications(recipients, 
 				p.config_params_dict.get('smtp_server'), 
-				p.config_params_dict.get('smtp_port'), 
+				p.config_params_dict.get('smtp_port'),
+				'[DEMUX] Data processing complete',
 				body_text)
+
+	# track this data so we don't store it forever:
+	cloud_delivery_tracking.main(p.project_to_bucket_mapping)
+
 
 def parse_commandline_args():
 	"""

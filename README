@@ -29,3 +29,7 @@ abc@jimmy.harvard.edu,def@jimmy.harvard.edu
 
 Additional notes:
 The script (and subprocesses that are launched) will send logging to stdout, so this should be captured in a nohup.out log or similar redirection.
+
+Update March 6, 2017:
+All the above is still relevant.  
+

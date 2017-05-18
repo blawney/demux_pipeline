@@ -1,0 +1,15 @@
+<html>
+	<head>
+	</head>
+	<body>
+		<p>This is a reminder that your sequencing data for project {{project_id}} will be unavailable after {{target_date}} ({{remaining_days}} days remaining).</p>
+	  Sequence data files
+		are large and can take a significant time to download, so please do this as soon as possible.  If you would like, we can store the data for longer for an additional charge.
+		Based on your current usage of {{size_in_gb}}GB, this would approximately cost ${{estimated_monthly_cost}} for each month
+		</p>
+		<p>To download, visit <a href="{{cccb_download_site}}">{{cccb_download_site}}</a> and login.</p>
+		<p>For any questions, please contact the CCCB at <a href="mailto:cccb@jimmy.harvard.edu?Subject=CCCB%20data%20storage" target="_top">cccb@jimmy.harvard.edu</a><p/>
+		<p>This is an automated message- do not reply to this.</p>
+
+	</body>
+</html>

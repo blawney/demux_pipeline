@@ -6,9 +6,9 @@ import shutil
 import json
 import logging
 from datetime import datetime as date
-from ConfigParser import SafeConfigParser
 import subprocess
 import demux_cloud_upload
+import utils
 
 class SampleSheetException(Exception):
 	pass
@@ -40,31 +40,13 @@ class Pipeline(object):
 
 	def parse_config_file(self):
 		"""
-		This function finds and parses a configuration file, which contains various constants to run this pipeline
+		This function calls out to the configuration parser, which contains various constants to run this pipeline
 		"""
-		current_dir = os.path.dirname(os.path.realpath(__file__)) # this gets the directory of this script
-		cfg_files = [os.path.join(current_dir, f) for f in os.listdir(current_dir) if f.endswith('cfg')]
-		if len(cfg_files) == 1:
-			logging.info('Parsing configuration file: %s' % cfg_files[0])
-			parser = SafeConfigParser()
-			parser.read(cfg_files[0])
-
-			self.config_params_dict = {}
-			for opt in parser.options(self.instrument):
-				value = parser.get(self.instrument, opt)
-				try:
-					# if no comma is found, then it will throw an exception.  
-					value.index(',')
-					value = tuple([v.strip() for v in value.split(',') if len(v.strip()) > 0])
-					self.config_params_dict[opt] = value
-				except ValueError as ex:
-					self.config_params_dict[opt] = value
-					
-			logging.info('Parameters parsed from configuration file: ')
-			logging.info(self.config_params_dict)
-		else:
-			logging.error('There were %d config (*cfg) files found in %s.  Need exactly 1.  Correct this.' % (len(cfg_files), current_dir))
-			sys.exit(1)
+		target_section = 'DEMUX'
+		logging.info('Looking to parse the [%s] section from a configuration file.' % target_section)
+		self.config_params_dict = utils.parse_config_file(target_section)
+		logging.info('Parameters parsed from configuration file: ')
+		logging.info(self.config_params_dict)
 
 
 	def create_output_directory(self):
@@ -443,6 +425,7 @@ class Pipeline(object):
 
 	def upload_to_remote(self):
 		logging.info('About to upload to cloud storage')
+		project_to_bucket_mapping = {}
 		for project_id in self.project_to_email_mapping.keys():
 			project_dir = os.path.join(self.target_dir, project_id)
 			logging.info('Uploading project directory at: %s' % project_dir)
@@ -451,12 +434,16 @@ class Pipeline(object):
 			while attempt < int(self.config_params_dict['max_cloud_upload_attempts']):
 				logging.info('Upload attempt %s' % (attempt + 1))
 				try:
-					demux_cloud_upload.entry_method(project_dir, self.config_params_dict)
+					bucket_name, client_emails = demux_cloud_upload.entry_method(project_dir, self.config_params_dict)
+					project_to_bucket_mapping.update({project_id: {'bucket': bucket_name, 'client_emails': client_emails}}) 
+
 					break
 				except Exception as ex:
 					logging.error('Cloud upload attempt %s failed.' % (attempt + 1))
 					logging.error('Exception message: %s' % ex.message)
 					attempt += 1
+		self.project_to_bucket_mapping = project_to_bucket_mapping
+		
 
 
 class NextSeqPipeline(Pipeline):
@@ -554,7 +541,10 @@ class NextSeqPipeline(Pipeline):
 					contents = line.split(',')
 					project_id = contents[1].strip()
 					emails = [x.strip() for x in contents[2:] if len(x) > 0]
-					project_to_email_mapping[project_id] = emails
+					if project_id in project_to_email_mapping:
+						project_to_email_mapping[project_id].extend(emails)
+					else:
+						project_to_email_mapping[project_id] = emails
 			logging.info('Contacts from sampleSheet: %s' % project_to_email_mapping)
 			self.project_to_email_mapping = project_to_email_mapping
 			if len(project_to_email_mapping.keys()) == 0:
@@ -595,6 +585,14 @@ class NextSeqPipeline(Pipeline):
 			logging.info('The following projects were identified from the SampleSheet.csv: %s' % project_id_list)
 			self.project_id_list = project_id_list
 
+			# there were issues where the Email fields (in the Header section) were being incorrectly formatted.  Let's 
+			# catch errors here.  Otherwise it can throw errors later on after wasting a lot of computation time.
+			# the keys from self.project_to_email_mapping need to map the project_id list:
+			if set(self.project_to_email_mapping.keys()) != set(self.project_id_list):
+				logging.error('There was a likely error in parsing the email contacts for each project.')
+				logging.error('Namely, the set of project IDs from the Email fields (%s) did not match those from the sample annotation section (%s).' % (self.project_to_email_mapping.keys(), self.project_id_list))
+				sys.exit(1)
+	
 			# get the sample names for later use.  Put them into a map, keyed by the project id
 			sample_id_map = { p:[] for p in project_id_list }
 			for l in annotation_lines:
@@ -609,18 +607,6 @@ class NextSeqPipeline(Pipeline):
 			logging.info(sample_id_map)
 
 			self.project_to_sample_map = sample_id_map
-
-
-			# look for the tag which indicates that we should kickoff downstream processes:
-			# note that only one sample in a particular project needs to be marked (not every line in the SampleSheet)
-			s = set()
-			for line in annotation_lines:
-				contents = line.split(',')
-				s.add((contents[header_dict['Sample_Project']], contents[header_dict['Description']]))
-			
-			project_to_targets = list(s)
-			self.project_to_targets = [x for x in project_to_targets if x[1].split(':')[0].lower() in self.config_params_dict.get('downstream_targets')]
-			logging.info('From samplesheet, while looking for potential downstream tools to run: %s' % self.project_to_targets)
 
 		else:
 			logging.error('Could not locate a SampleSheet.csv file in %s ' % self.run_directory_path)

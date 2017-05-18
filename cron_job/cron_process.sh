@@ -10,4 +10,4 @@ source /opt/rh/python27/enable
 if [ -f '/cbhomes2/cccbpipeline/google-cloud-sdk/path.bash.inc' ]; then source '/cbhomes2/cccbpipeline/google-cloud-sdk/path.bash.inc'; fi
 
 # kickoff the scanner, which searches for unprocessed directories and subsequenctly calls another process to do everything
-/ifs/labs/cccb/projects/cccb/pipelines/demux_pipeline_current/cron_job/scan.py
+/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/cron_job/scan.py

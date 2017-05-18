@@ -1,4 +1,4 @@
-#!/ifs/labs/cccb/projects/cccb/pipelines/demux_pipeline_current/venv/bin/python
+#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/venv/bin/python
 
 import os
 import sys

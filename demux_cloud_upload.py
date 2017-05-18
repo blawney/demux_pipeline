@@ -11,14 +11,18 @@ import glob
 import logging
 import subprocess
 
+import utils
+
 class InvalidBucketName(Exception):
 	pass
 
+
 class MockObject(object):
 	"""
-	When I initially wrote this module, I had libcloud doing the uploads.  That kept failing, so we decided to 
+	When I initially wrote this module, I had Apache libcloud doing the uploads.  The uploads kept failing, so we decided to 
 	switch to gsutil utilities.  When we upload via gsutil we do NOT get back a google storage "object" instance
-	representing the uploaded object.  Other functions call attributes on those (e.g. uploaded_object.name).  
+	representing the uploaded object.  Other functions call attributes on those (e.g. uploaded_object.name) to
+	do things like reset permissions, etc..  
 
 	To avoid rewriting those working functions, simply make a wrapper object which has the 'name' attribute
 	For each file uploaded via gsutil, create an instance of this class, giving it the proper name.
@@ -26,7 +30,11 @@ class MockObject(object):
 	def __init__(self, name):
 		self.name = name
 
+
 def read_credentials(credential_file):
+	"""
+	Read the credentials file and return a tuple containing the client ID and the client secret.  Used for the Oauth2 flow.
+	"""
 	logging.info('Read credential file at %s' % credential_file)
 	j = json.load(open(credential_file))
 	logging.info('file contents: %s' % j)
@@ -35,14 +43,13 @@ def read_credentials(credential_file):
 
 def get_connection_driver(params):
 	"""
-	Returns a storage driver, which exposes methods to operate on buckets
+	Returns a storage driver for the Apache libcloud library, which exposes methods to operate on buckets
 	"""
 	logging.info('Getting connection driver')
 	cls = libcloud.storage.providers.get_driver('google_storage')
 	client_id, secret = read_credentials(params['credential_file'])
 	logging.info('%s, %s' % (client_id, secret))
-	driver = cls(key=client_id, secret=secret)
-	driver.project_id = 'dfci-cccb'
+	driver = cls(key=client_id, secret=secret, project=params['google_project_id'])
 	logging.info('Created connection driver, returning')
 	return driver
 
@@ -131,12 +138,20 @@ def collect_files(project_dir, filetype, params):
 	filetype = params[filetype]
 	return glob.glob(os.path.join(project_dir, '%s*' % params['sample_dir_prefix'],'*%s' % filetype)) # project_dir is the path on OUR local filesystem
 	
+
 def upload_fastq_dir(upload_items, project_dir, container, root_location, params):
 	"""
-	We can symlink the 'final' fastq files from a single location and use gsutil's rsync functionality to send them up
+	Since the fastq files are large, we required another way to upload them reliably.  The quick solution was to
+	symlink the 'final' fastq files from a single location and use gsutil's rsync functionality to send them up
+
+	upload_items is a list of filepaths to the fastq files.
+	container is a Apache libcloud Container instance
+	root_location is a directory, relative to the root of the bucket, where the fastq files will go
+		for instance, if root_location is a/b/c (and the bucket is mybucket, then the fastq files will go to
+		gs://mybucket/a/b/c and fastq files will be at gs://mybucket/a/b/c/myfastq.fastq.gz
+	params is a dictionary with configuration parameters
 	"""
 	# first symlink all the necessary files
-	#TODO check that this does or does not exist first
 	try:
 		final_symlinked_directory = os.path.join(project_dir, params['final_symlinked_fastq_directory'])
 		os.mkdir(final_symlinked_directory)
@@ -192,6 +207,8 @@ def upload(upload_items, container, root_location, params):
 	uploaded_objects = []
 	for resource in upload_items:
 		# check if we're uploading a directory. If that's the case, we have to walk the directory and upload the files one-by-one
+		# The reason for this is that the fastQC html files need to have their relative links rewritten (e.g. links to the images, css files, etc).
+		# Otherwise, the pages will not render correctly.  Because of that, we can't just do a cp -r operation.  
 		if os.path.isdir(resource):
 			for r, d, files in os.walk(resource):
 				for f in files:
@@ -223,6 +240,7 @@ def upload(upload_items, container, root_location, params):
 						else:
 							uploaded_objects.append(MockObject(upload_name))
 		else:
+			# TODO (maybe): Change this over to a gsutil command.  It's just a simple file copy (on small files) so it works reliably at the moment
 			uploaded_objects.append(container.upload_object(resource, os.path.join(root_location,  os.path.basename(resource))))
 			logging.info('Upload %s to %s' % (resource, os.path.join(root_location,  os.path.basename(resource))))
 	return uploaded_objects
@@ -230,13 +248,16 @@ def upload(upload_items, container, root_location, params):
 
 def get_client_emails(project_dir, params):
 	contents = json.load(open(os.path.join(project_dir, params['project_descriptor'])))
-	gmail_addresses = []
+	client_email_addresses = []
 	for email in contents['client_emails']:
+		#TODO generalize/parameterize this once we know the full scope of allowed accounts
 		if email.endswith('gmail.com'):
-			gmail_addresses.append(email)
-	if len(gmail_addresses) == 0:
+			client_email_addresses.append(email)
+		if email.endswith('mail.dfci.harvard.edu'):
+			client_email_addresses.append(email)
+	if len(client_email_addresses) == 0:
 		logging.info('Warning: no email addresses were added, so only CCCB has access')
-	return gmail_addresses
+	return client_email_addresses
 
 
 def give_permissions(driver, container, object_list, users):
@@ -255,7 +276,7 @@ def give_permissions(driver, container, object_list, users):
 
 def update_project_mappings(storage_driver, bucket, users, params):
 	"""
-	bucket is 
+	This downloads the file which maps the users to their buckets, updates it, and re-uploads it
 	"""
 
 	try:
@@ -298,6 +319,11 @@ def update_project_mappings(storage_driver, bucket, users, params):
 
 
 def calculate_upload_size(uploaded_objects, scale=1e9):
+	"""
+	(If used).  Uploaded objects is a list of objects which have a 'size' attribute representing 
+	their size in bytes.  Will return the sum of the bytes in all lists, scaled by the appropriate factor 
+	(e.g. 1e9 for GB) for human readability.
+	"""
 	all_sizes = [o.size for o in uploaded_objects]	
 	total_size_in_bytes = np.sum(all_sizes)
 	return total_size_in_bytes/float(scale)		
@@ -306,20 +332,24 @@ def calculate_upload_size(uploaded_objects, scale=1e9):
 def entry_method(project_dir, params):
 	"""
 	project_dir is a string giving the full path to the project directory
+	params is a dictionary of configuration parameters.
 	"""
 
-	# assume params is a passed dictionary 
+	# update the param dict to include the cloud-specific parameters
+	cloud_specific_params = utils.parse_config_file('CLOUD')
+	params.update(cloud_specific_params)
+	logging.info('Updated params in cloud upload script: %s' % params)
 
 	# correct the fastQC directory suffix name
 	params['fastqc_dir_suffix'] = params['final_fastq_tag'] + params['fastqc_dir_suffix']
 
 	params['fastq_file_suffix'] = '.' + params['final_fastq_tag'] + '.fastq.gz'
 
-	gmail_addresses = get_client_emails(project_dir, params)
+	client_email_addresses = get_client_emails(project_dir, params)
 	ilab_id = os.path.basename(project_dir).replace('_', '-').lower()
 
 	driver = get_connection_driver(params)
-	bucket_obj = get_or_create_bucket(ilab_id, driver, gmail_addresses, params)
+	bucket_obj = get_or_create_bucket(ilab_id, driver, client_email_addresses, params)
 
 	#TODO: collect lane-specific fastq
 
@@ -335,7 +365,7 @@ def entry_method(project_dir, params):
 	uploaded_objects.extend(upload(fastQC_dirs, bucket_obj, params['cloud_fastqc_root'], params))
 
 	# give permissions:
-	give_permissions(driver, bucket_obj, uploaded_objects, gmail_addresses)
+	give_permissions(driver, bucket_obj, uploaded_objects, client_email_addresses)
 
 	# get the total upload size
 	# commented out since using rsync
@@ -346,6 +376,7 @@ def entry_method(project_dir, params):
 	upload([os.path.join(project_dir, params['project_descriptor']),], bucket_obj, '', params)	
 
 	# handle master metadata file
-	update_project_mappings(driver, bucket_obj, gmail_addresses, params)
+	update_project_mappings(driver, bucket_obj, client_email_addresses, params)
 
-
+	# return the bucket name and the email addresses- need this information for the data retention process
+	return bucket_obj.name, client_email_addresses
