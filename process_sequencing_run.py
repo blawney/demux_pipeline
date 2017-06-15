@@ -1,4 +1,4 @@
-#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/venv/bin/python
+#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/demux_venv/bin/python
 
 import logging
 import os
@@ -14,6 +14,7 @@ from email.mime.text import MIMEText
 import subprocess
 import cloud_delivery_tracking
 import utils
+import parse_fastqc_data
 
 # names of the machines for global reference:
 AVAILABLE_INSTRUMENTS = ['nextseq',]
@@ -78,6 +79,9 @@ def process():
 			outfile.write('\n'.join([sample + '\t' + x for x in project_mapping[sample]]))
 			outfile.write('\n')
 
+
+	# comb through the fastQC reports and create a summary table:
+	parse_fastqc_data.parse(original_project_dir)
 
 	# write the HTML output and create the delivery:
 	delivery_links = publish(p.target_dir, 

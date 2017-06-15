@@ -1,4 +1,4 @@
-#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/venv/bin/python
+#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/demux_venv/bin/python
 
 import os
 import sys
@@ -109,7 +109,6 @@ def main(params):
 	converter = lambda x: [x] if isinstance(x, str) else x
 	subscribers = converter(params.get('subscribers'))
 	comp_subscribers = converter(params.get('comp_subscribers'))
-
 	for d in unprocessed_dirs:
 		progress_file = os.path.join(d, params.get('in_progress_file'))
 		if os.path.isfile(os.path.join(d, params.get('target_file'))) and not os.path.isfile(progress_file):

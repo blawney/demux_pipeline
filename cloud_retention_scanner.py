@@ -1,4 +1,4 @@
-#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/venv/bin/python
+#!/ifs/labs/cccb/projects/cccb/pipelines/demux_and_delivery/demux_venv/bin/python
 
 """
 This module scans the database of projects and determines those that are approaching deletion.  
