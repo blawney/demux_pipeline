@@ -10,7 +10,10 @@ import re
 import glob
 import logging
 import subprocess
-
+import urllib2
+import urllib
+import base64
+from Crypto.Cipher import DES
 import utils
 
 class InvalidBucketName(Exception):
@@ -101,9 +104,12 @@ def get_or_create_bucket(ilab_id, driver, users, params):
 
 		# add or update permissions
 		for user in users:
-			driver.ex_set_permissions(c.name, 
-				entity="user-%s" % user, 
-				role=ObjectPermissions.READER)
+			if user in params['cccb_emails']:
+				gsutil_chmod(user, c.name)
+			else:
+				driver.ex_set_permissions(c.name, 
+					entity="user-%s" % user, 
+					role=ObjectPermissions.READER)
 		# TODO: unless something strange happened, we have a container now.  Maybe double-check?
 		logging.info('final container: %s' % c.name)
 		return c 		
@@ -136,6 +142,8 @@ def collect_files(project_dir, filetype, params):
 	filetype gives what sort of file we're looking for by matching the end
 	"""
 	filetype = params[filetype]
+	pattern = os.path.join(project_dir, '%s*' % params['sample_dir_prefix'],'*%s' % filetype)
+	logging.info('Searching with glob pattern: %s' % pattern)
 	return glob.glob(os.path.join(project_dir, '%s*' % params['sample_dir_prefix'],'*%s' % filetype)) # project_dir is the path on OUR local filesystem
 	
 
@@ -150,7 +158,13 @@ def upload_fastq_dir(upload_items, project_dir, container, root_location, params
 		for instance, if root_location is a/b/c (and the bucket is mybucket, then the fastq files will go to
 		gs://mybucket/a/b/c and fastq files will be at gs://mybucket/a/b/c/myfastq.fastq.gz
 	params is a dictionary with configuration parameters
+
+	Note that we change the name of the fastq in the symlink directory- this way the file names that users
+	will download are a little more "standard", rather than having <sample>_R1_.final.fastq.gz
 	"""
+	original_suffix = '_.final.fastq.gz'
+	new_suffix = '.fastq.gz'
+
 	# first symlink all the necessary files
 	try:
 		final_symlinked_directory = os.path.join(project_dir, params['final_symlinked_fastq_directory'])
@@ -165,8 +179,9 @@ def upload_fastq_dir(upload_items, project_dir, container, root_location, params
 
 	for item in upload_items:
 		try:
-			basename = os.path.basename(item)
-			os.symlink(item, os.path.join(final_symlinked_directory, basename))
+			basename = os.path.basename(item) # e.g. <sample>_R?_.final.fastq.gz
+			edited_name = basename[:-len(original_suffix)] + new_suffix
+			os.symlink(item, os.path.join(final_symlinked_directory, edited_name))
 		except OSError as ex:
 			if ex.errno == 17:
 				logging.info('A symlink for %s fastq already existed' % basename)
@@ -188,11 +203,23 @@ def upload_fastq_dir(upload_items, project_dir, container, root_location, params
 		logging.error('There was an error while uploading with gsutil.  Check the logs.')
 		raise Exception('Error during gsutil upload module.')
 	else:
+		# now put the attributes of the files into a mock object which keeps me from having to refactor code elsewhere.  Previously we had 
+		# objects created by libcloud or other libraries which had various useful attributes.  We mock that functionality here with a dummy class	
 		uploaded_objects = []
 		for item in upload_items:
 			basename = os.path.basename(item)
-			object_name = os.path.join(root_location, basename)
+			edited_name = basename[:-len(original_suffix)] + new_suffix
+			object_name = os.path.join(root_location, edited_name)
 			uploaded_objects.append(MockObject(object_name))
+
+			# set some metadata so the download does NOT prepend junk onto the file name
+			set_meta_cmd = 'gsutil setmeta -h "Content-Disposition: attachment; filename=%s" gs://%s/%s' % (basename, container.name, object_name)
+			logging.info('Issue system command for setting metadata on fastq file: %s' % set_meta_cmd)
+			process = subprocess.Popen(set_meta_cmd, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+			stdout, stderr = process.communicate()
+			if process.returncode != 0:
+				logging.error('There was an error while setting the metadata on the fastq with gsutil.  Check the logs.  STDERR was:%s' % stderr)
+				raise Exception('Error during gsutil upload module.')
 	return uploaded_objects
 	
 
@@ -253,14 +280,35 @@ def get_client_emails(project_dir, params):
 		#TODO generalize/parameterize this once we know the full scope of allowed accounts
 		if email.endswith('gmail.com'):
 			client_email_addresses.append(email)
-		if email.endswith('mail.dfci.harvard.edu'):
+		elif email.endswith('mail.dfci.harvard.edu'):
 			client_email_addresses.append(email)
+		#client_email_addresses.append(email)
+
+	# add staff to have viewing privileges
+	client_email_addresses.extend(params['cccb_emails'])
 	if len(client_email_addresses) == 0:
 		logging.info('Warning: no email addresses were added, so only CCCB has access')
+	logging.info('Will give permissions to the following emails: %s' % client_email_addresses)
 	return client_email_addresses
 
+def gsutil_chmod(user, container_name, object_name = ''):
+	"""
+	For whatever reason, libcloud will not let me assign OWNER permissions to the CCCB users so we have to fall back to gsutil
+	"""
+	chmod_cmd = 'gsutil acl ch -u %s:O gs://%s/%s' % (user, container_name, object_name)
+	logging.info('Issue system command for adding CCCB users as OWNERS: %s' % chmod_cmd)
+	process = subprocess.Popen(chmod_cmd, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+	stdout, stderr = process.communicate()
+	logging.info('STDOUT from gsutil chmod: ')
+	logging.info(stdout)
+	logging.info('STDERR from gsutil chmod: ')
+	logging.info(stderr)
+	if process.returncode != 0:
+	       	logging.error('There was an error while changing the ACL with gsutil.  Check the logs.')
+	    	raise Exception('Error during gsutil acl/chmod module.')
 
-def give_permissions(driver, container, object_list, users):
+
+def give_permissions(driver, container, object_list, users, params):
 	"""
 	Give reader permissions to the users.
 	driver is an instance of the storage driver
@@ -271,8 +319,45 @@ def give_permissions(driver, container, object_list, users):
 	for o in object_list:
 		logging.info('adjusting privileges for %s' % o.name)
 		for user in users:
-			driver.ex_set_permissions(container.name, object_name = o.name, entity="user-%s" % user, role=ObjectPermissions.READER)
+			if user in params['cccb_emails']:
+				logging.info('%s was a cccb user, so set with gsutil' % user)
+				gsutil_chmod(user, container.name, o.name)
+			else:
+				logging.info('%s was not a CCCB user so we will set privileges with libcloud' % user)
+				driver.ex_set_permissions(container.name, object_name = o.name, entity="user-%s" % user, role=ObjectPermissions.READER)
 				
+
+def update_webapp_database(container, object_list, client_email_addresses, params):
+	"""
+	This sends a request to the web application 
+	"""
+	upload_targets = ['fastq.gz', 'html', 'zip']
+	upload_list = []
+	for o in object_list:
+		if any([o.name[-len(suffix):]==suffix for suffix in upload_targets]):
+			upload_dict = {'basename': o.name, 'bucket_name':container.name, 'owners':client_email_addresses}
+			upload_list.append(upload_dict)
+	d = {}
+	d2 = {}
+	d2['uploaded_objects'] = upload_list
+	d['uploads'] = json.dumps(d2)
+
+	auth_key = params['simple_auth_key']
+	obj=DES.new(params['encryption_key'], DES.MODE_ECB)
+	enc_token = obj.encrypt(auth_key)
+	b64_str = base64.encodestring(enc_token)
+	d['token'] = b64_str
+
+	logging.info('Will notify delivery database by updating the following:\n')
+	logging.info(d)
+
+	endpoint_url = params['web_application_notification_endpoint']
+	data = urllib.urlencode(d)
+	req = urllib2.Request(endpoint_url, {'Content-Type': 'application/json'})
+	f = urllib2.urlopen(req, data=data)
+	response = f.read()
+	logging.info('Response from web application: %s' % response)
+
 
 def update_project_mappings(storage_driver, bucket, users, params):
 	"""
@@ -329,6 +414,34 @@ def calculate_upload_size(uploaded_objects, scale=1e9):
 	return total_size_in_bytes/float(scale)		
 
 
+def zip_fastqc_reports(fastQC_dirs, project_dir, params):
+	logging.info('Will zip up the fastQC reports:\n%s' % '\n'.join(fastQC_dirs))
+	base_cmd = 'zip -r %s %s'
+	ilab_id = os.path.basename(project_dir)
+
+	# we want to keep some of the paths when we zip, but don't want a huge stack of directories on top, so change to the project directory
+	# and zip from there.  Then change back.
+	initial_cwd = os.getcwd()
+	os.chdir(project_dir)
+	final_zip = ilab_id + params['fastqc_zip_suffix']
+	relative_locations = [os.path.relpath(os.path.realpath(x)) for x in fastQC_dirs] # need to run realpath inside RELpath to resolve any funny behavior due to /cccbstore-rc symlink vs /ifs/labs/cccb
+	zip_cmd = base_cmd % (final_zip, ' '.join(relative_locations))
+
+	process = subprocess.Popen(zip_cmd, shell = True, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+	stdout, stderr = process.communicate()
+	logging.info('STDOUT from fastQC ZIP: ')
+	logging.info(stdout)
+	logging.info('STDERR from fastQC ZIP: ')
+	logging.info(stderr)
+	if process.returncode != 0:
+		logging.error('There was an error while zipping up the fastQC files.')
+		raise Exception('Error during zip of fastQC.')
+
+	# change back:
+	os.chdir(initial_cwd)
+
+	return os.path.join(project_dir, final_zip)
+
 def entry_method(project_dir, params):
 	"""
 	project_dir is a string giving the full path to the project directory
@@ -341,7 +454,7 @@ def entry_method(project_dir, params):
 	logging.info('Updated params in cloud upload script: %s' % params)
 
 	# correct the fastQC directory suffix name
-	params['fastqc_dir_suffix'] = params['final_fastq_tag'] + params['fastqc_dir_suffix']
+	params['fastqc_dir_tag'] = params['final_fastq_tag'] + params['fastqc_dir_suffix']
 
 	params['fastq_file_suffix'] = '.' + params['final_fastq_tag'] + '.fastq.gz'
 
@@ -354,18 +467,28 @@ def entry_method(project_dir, params):
 	#TODO: collect lane-specific fastq
 
 	fastq_files = collect_files(project_dir, 'fastq_file_suffix', params)
-	fastQC_dirs = collect_files(project_dir, 'fastqc_dir_suffix', params)
-	for fqd in fastQC_dirs:
-		prep_fastqc_files(fqd, bucket_obj.name, params)
+	logging.info('Found the following fastq files:')
+	logging.info('\n'.join(fastq_files))
+	fastQC_dirs = collect_files(project_dir, 'fastqc_dir_tag', params)
+	logging.info('Found the following fastQC report directories:')
+	logging.info('\n'.join(fastQC_dirs))
+	#for fqd in fastQC_dirs:
+	#	prep_fastqc_files(fqd, bucket_obj.name, params)
 	
+	#zip-up fastQC directories
+	zipfile = zip_fastqc_reports(fastQC_dirs, project_dir, params)
+
 	# do uploads
 	uploaded_objects = []
 	uploaded_objects.extend(upload_fastq_dir(fastq_files, project_dir, bucket_obj, params['cloud_fastq_root'], params))
 	#uploaded_objects.extend(upload(fastq_files, bucket_obj, params['cloud_fastq_root'], params))
-	uploaded_objects.extend(upload(fastQC_dirs, bucket_obj, params['cloud_fastqc_root'], params))
+	uploaded_objects.extend(upload([zipfile,], bucket_obj, params['cloud_fastqc_root'], params))
 
 	# give permissions:
-	give_permissions(driver, bucket_obj, uploaded_objects, client_email_addresses)
+	give_permissions(driver, bucket_obj, uploaded_objects, client_email_addresses, params)
+
+	# let the webapp know about the uploads:
+	update_webapp_database(bucket_obj, uploaded_objects, client_email_addresses, params)
 
 	# get the total upload size
 	# commented out since using rsync

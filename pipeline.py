@@ -131,18 +131,18 @@ class Pipeline(object):
 			if os.path.isdir(lane_specific_fastq_dir):
 				# check for existing flowcell dirs (check that they are directories and follow the name convention)
 				existing_fc_dirs = sorted([x for x in os.listdir(lane_specific_fastq_dir) if os.path.isdir(os.path.join(lane_specific_fastq_dir,x)) and x.startswith(self.config_params_dict.get('flowcell_prefix'))])
-				final_fc_index = int(existing_fc_dirs[-1][len(self.config_params_dict.get('flowcell_prefix')):]) #strip the prefix and cast to an integer.  This is the largest index of existing directories
+				final_fc_index = sorted([int(x[len(self.config_params_dict.get('flowcell_prefix')):]) for x in existing_fc_dirs])[-1]
 				logging.info('There were existing flowcell subdirs (%s) in the lane-specific fastq directory at %s' % (existing_fc_dirs, lane_specific_fastq_dir))
 				fc_dir = os.path.join(lane_specific_fastq_dir, self.config_params_dict.get('flowcell_prefix') + str(final_fc_index + 1))
 				logging.info('Creating new flowcell directory for lane-specific fastq files at %s' % fc_dir)
 				os.mkdir(fc_dir)
-				self.flowcell_index = final_fc_index + 1
+				self.fc_index_map[project_id] = final_fc_index + 1
 			else:
 				# create a new dir
 				fc_dir = os.path.join(lane_specific_fastq_dir, self.config_params_dict.get('flowcell_prefix') + '1')
 				logging.info('No lane-specific fastq directories found.  Creating one for this flowcell at %s' % fc_dir)
 				os.makedirs(fc_dir)
-				self.flowcell_index = 1
+				self.fc_index_map[project_id] = 1
 		except OSError as ex:
 			logging.error('There was an error, perhaps during creation of %s' % fc_dir)
 			sys.exit(1)
@@ -184,6 +184,7 @@ class Pipeline(object):
 			# check that we do have a destination directory to go to.
 			if os.path.isdir(month_dir):
 				self.target_dir = month_dir
+				self.fc_index_map = {}
 				for project_id in self.project_id_list:
 					Pipeline.create_project_structure(self, project_id)
 			else:
@@ -320,7 +321,7 @@ class Pipeline(object):
 
 				# finally, relocate the lane-specific fastq files to the project directory so we don't risk losing that level of data when
 				# we delete the flowcell/demux folders
-				dest_dir = os.path.join(self.target_dir, project_id, self.config_params_dict.get('lane_specific_fastq_directory'), self.config_params_dict.get('flowcell_prefix') + str(self.flowcell_index))
+				dest_dir = os.path.join(self.target_dir, project_id, self.config_params_dict.get('lane_specific_fastq_directory'), self.config_params_dict.get('flowcell_prefix') + str(self.fc_index_map[project_id]))
 				for fq in read_1_fastq_files + read_2_fastq_files:
 					# since bcl2fastq will change underscores to dashes (and potentially other side-effects), we will rename the
 					# lane-specific files as we move them.
@@ -330,12 +331,14 @@ class Pipeline(object):
 					destination_path = os.path.join(dest_dir, new_name)
 					logging.info('Moving %s to %s' % (fq, destination_path))
 					shutil.move(fq, destination_path)
+					logging.info('Done moving')
 
 				# keep track of the file mapping
 				sample_to_lane_specific_fastq_map[sample_name] = [os.path.realpath(x) for x in glob.glob(os.path.join(dest_dir, sample_name + '*.fastq.gz'))]
 
 			# add the file mapping to the highest-level dict
 			self.lane_specific_fastq_mapping[project_id] = sample_to_lane_specific_fastq_map
+			logging.info(self.lane_specific_fastq_mapping[project_id])
 
 
 	def merge_and_rename_fastq(self, sample_dir, read_num):
